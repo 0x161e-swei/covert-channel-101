@@ -4,6 +4,9 @@
 // out chat messages
 #include <stdio.h>
 #include <stdint.h>
+#include <stdbool.h>
+#include <stdarg.h>
+#include <getopt.h>
 
 // You may use memory allocators and helper functions 
 // (e.g., rand()).  You may not use system().
