@@ -55,7 +55,7 @@ bool detect_bit(struct state *state) {
         printf("Misses: %lld\n", misses);
     }
 
-    // Consider a 1 when more than 1/3 of the accesses were cache misses
+    // Consider a 1 when more than 1/20 of the accesses were cache misses
     return (misses > (state->iterations * CACHE_WAYS) / 20);
 }
 
@@ -64,8 +64,8 @@ void init_state(struct state *state, int argc, char **argv) {
     int o = 6;              // log_2(64), where 64 is the line size
     int s = 6;              // log_2(64), where 64 is the number of cache sets
 
-    int two_o_s = ipow(2, o + s);
-    int b = n * two_o_s;
+    int two_o_s = ipow(2, o + s);       // 4096
+    int b = n * two_o_s;                // 32,768
 
     state->step = two_o_s;
     state->buffer = malloc((size_t) b);

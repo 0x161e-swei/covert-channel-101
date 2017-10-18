@@ -39,7 +39,7 @@ int get_cache_slice(uint64_t phys_addr) {
     return slice;
 }
 
-uint32_t get_cache_set_index(uint64_t phys_addr) {
+uint64_t get_cache_set_index(ADDR_PTR phys_addr) {
     uint64_t mask = ((uint64_t) 1 << 17) - 1;
     return (phys_addr & mask) >> 6;
 }
@@ -89,13 +89,12 @@ int main(int argc, char **argv)
     int n = cache_ways;
     int o = 6;              // log_2(64), where 64 is the line size
     int s = 13;             // log_2(8192), where 8192 is the number of cache sets
-    int c = 4;              // arbitrary constant
 
-    int two_o = ipow(2, o);
-    int two_o_s = ipow(2, s) + two_o;
+    int two_o = ipow(2, o);             // 64
+    int two_o_s = ipow(2, s) * two_o;   // 524,288
 
-    int b = n * two_o_s * c;
-    char buffer[b];
+    int b = n * two_o_s;    // size in bytes of the LLC
+    char *buffer = malloc((size_t) b);
 
     printf("Evicting the LLC.\n");
 
@@ -104,8 +103,14 @@ int main(int argc, char **argv)
         // char text_buf[128];
         // fgets(text_buf, sizeof(text_buf), stdin);
 
+        // i is the set index
         for (int i = 0; i < cache_sets; i++) {
-            clflush((ADDR_PTR) &buffer[i]);
+
+            // j is the line index
+            for (int j = 0; j < n; j++) {
+
+                clflush((ADDR_PTR) &buffer[i * two_o + j * two_o_s]);
+            }
         }
 
 		// Put your covert channel code here
