@@ -39,15 +39,31 @@ int main(int argc, char **argv)
     char text_buf[128];
     fgets(text_buf, sizeof(text_buf), stdin);
     char* msg = stringToBinary(text_buf);
-#ifdef DEBUG
     printf(msg);
-#endif
     size_t msg_len = strlen(msg);
-    for (int ind =0 ; ind < msg_len ; ind++){
-      if (msg[ind] == '1'){
-#ifdef DEBUG
-	printf("flushing\n");
+
+    // Start Bit flush. It tells sender to start listening
+    clock_t start_t, end_t, total_t;
+    start_t = clock();
+    /* i is the set index */
+    for (int  i = 0; i < cache_sets; i++) {
+      /* j is the line index */
+      for (int j = 0; j < n; j++) {
+	clflush((ADDR_PTR) &buffer[i * two_o + j * two_o_s]);
+      }
+    }
+    long interval = 5500;
+    /* hardcoding for now */
+    /* for (int junk = 0; junk < 2400000 && (clock() -start_t) < interval ; junk++) {} */
+    end_t = clock();
+    total_t = (end_t - start_t);
+#ifdef DEBUG    
+    printf("Total time taken by CPU: %ld\n", total_t  );
+    printf("message len %d \n ", msg_len);
 #endif
+    for (int ind =0 ; ind < msg_len ; ind++){
+      if (msg[ind] == '0'){
+	start_t = clock();
 	/* i is the set index */
 	for (int i = 0; i < cache_sets; i++) {
 	  /* j is the line index */
@@ -55,18 +71,25 @@ int main(int argc, char **argv)
 	    clflush((ADDR_PTR) &buffer[i * two_o + j * two_o_s]);
 	  }
 	}
-      }else{
+	/* hardcoding for now */
+	int junk;
+	for (junk = 0; junk < 2400000 && (clock() -start_t) < interval; junk++) {}
 #ifdef DEBUG	
-	printf("Not flushing\n");
-#endif
+	printf("\nTotal time taken by Flushing: %ld ; junk = %d\n", clock()- start_t, junk  );
+#endif	
+      }else{
+	start_t = clock();
+	/* hardcoding for now */
+	int junk;
+	for (junk = 0; junk < 4000000 &&  (clock() -start_t) < interval ; junk++) {}
+#ifdef DEBUG	
+	printf("\nTotal time taken by NOT Flushing: %ld ; junk = %d \n", clock()- start_t, junk  );
+#endif	
       }
-      /* hardcoding for now */
-      for (int junk = 0; junk < 45000; junk++) {}      
     }
-  }
+    
+  } // while loop
   
   printf("Sender finished :) \n");
   return 0;
 }
-
-
