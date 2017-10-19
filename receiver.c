@@ -100,7 +100,6 @@ int main(int argc, char **argv) {
 	}else{
 	  printf("Zero detected.\n");
 	}
-
     }
 
     printf("Receiver finished.\n");

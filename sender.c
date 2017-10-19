@@ -56,12 +56,12 @@ int main(int argc, char **argv)
 	  }
 	}
       }else{
-
 #ifdef DEBUG	
 	printf("Not flushing\n");
 #endif
-	
       }
+      /* hardcoding for now */
+      for (int junk = 0; junk < 45000; junk++) {}      
     }
   }
   
