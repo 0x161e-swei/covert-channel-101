@@ -39,7 +39,10 @@ bool detect_bit(struct state *state) {
     }
 
     // Consider a 1 when more than 1/20 of the accesses were cache misses
-    return (misses > (state->iterations * CACHE_WAYS) / 20);
+    // WAJIH: Commenting this out for now. Not sure about theory about this
+    /* return (misses > (state->iterations * CACHE_WAYS) / 20); */
+    // Hard coded for now; will make threashold variable in future
+    return (misses > 20);
 }
 
 void init_state(struct state *state, int argc, char **argv) {
@@ -84,16 +87,20 @@ int main(int argc, char **argv) {
     struct state state;
     init_state(&state, argc, argv);
 
-    printf("Press enter to measure the time to read an address.\n");
-
+    printf("Press enter to begin listening.\n");
+    char text_buf[128];
+    fgets(text_buf, sizeof(text_buf), stdin);
     int receiving = 1;
     while (receiving) {
         char text_buf[128];
         fgets(text_buf, sizeof(text_buf), stdin);
-
-        detect_bit(&state);
-
         // Put your covert channel code here
+        if (detect_bit(&state)){
+	  printf("One detected.\n");
+	}else{
+	  printf("Zero detected.\n");
+	}
+
     }
 
     printf("Receiver finished.\n");
