@@ -1,30 +1,13 @@
 #include "util.h"
-
-// L1 properties
-static const int CACHE_SETS = 64;
-static const int CACHE_WAYS = 8;
+#include "cache_utils.c"
 
 struct state {
     char *buffer;
-
     int step;
     int iterations;
     int wait_cycles_between_measurements;
-
     bool debug;
 };
-
-int ipow(int base, int exp) {
-    int result = 1;
-    while (exp) {
-        if (exp & 1)
-            result *= base;
-        exp >>= 1;
-        base *= base;
-    }
-
-    return result;
-}
 
 bool detect_bit(struct state *state) {
     unsigned long long misses = 0;
@@ -113,7 +96,6 @@ int main(int argc, char **argv) {
         // Put your covert channel code here
     }
 
-    printf("Sender finished.\n");
-
+    printf("Receiver finished.\n");
     return 0;
 }
