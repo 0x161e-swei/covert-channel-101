@@ -5,7 +5,7 @@
 https://stackoverflow.com/questions/41384262/convert-string-to-binary-in-c */
 char* stringToBinary(char* s) {
   if(s == NULL) return 0; /* no input string */
-  size_t len = strlen(s);
+  size_t len = strlen(s)-1;
   /* each char is one byte (8 bits) and + 1 at the end for null terminator */
   char *binary = malloc(len*8 + 1); 
   binary[0] = '\0';

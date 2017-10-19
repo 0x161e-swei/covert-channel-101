@@ -16,33 +16,33 @@ bool detect_bit(struct state *state) {
     for (int k = 0; k < state->iterations; k++) {
         for (int i = 0; i < CACHE_WAYS; i++) {
             CYCLES time = measure_one_block_access_time((ADDR_PTR) (state->buffer + state->step * i));
-
             // printf("%" PRIx64 "\n", (uint64_t) (buffer + two_o_s * i));
             // printf("Time %d: %d\n", i, time);
-
             if (time > 80) {
                 misses++;
             } else {
                 hits++;
             }
         }
-
         // Busy loop to give time to the sender
         // The number of cycles of this loop are currently
         // decided by the program first argument.
         for (int junk = 0; junk < state->wait_cycles_between_measurements; junk++) {}
     }
-
     if (state->debug) {
         printf("Hits: %lld\n", hits);
         printf("Misses: %lld\n", misses);
     }
-
     // Consider a 1 when more than 1/20 of the accesses were cache misses
     // WAJIH: Commenting this out for now. Not sure about theory about this
     /* return (misses > (state->iterations * CACHE_WAYS) / 20); */
     // Hard coded for now; will make threashold variable in future
     return (misses > 20);
+}
+
+/* convert 8 bit datastream into character and return */
+char conv_char(char *data){
+  return strtol(data,0,2);
 }
 
 void init_state(struct state *state, int argc, char **argv) {
