@@ -35,11 +35,16 @@ bool detect_bit(struct state *state) {
     printf("Hits: %lld\n", hits);
     printf("Misses: %lld\n", misses);
   }
-  
-  if (state->wait_cycles_between_measurements > 3000 &&  state->debug){
+  /* clock_t w_start=clock(); */
+  if(misses > 22 && misses < 50){
+    for (int junk = 0; junk < 20000; junk++) {}
+    /* printf("extending time\n"); */
+  }
+  /* printf("\n extending time by CPU: %ld\n",clock()-w_start); */
+  if (state->wait_cycles_between_measurements > 3000 ){
     end_t = clock();
     total_t = (end_t - start_t);
-    printf("\n Total time taken by CPU: %ld\n", total_t);
+    /* printf("\n Total time taken by CPU: %ld\n", total_t); */
   }
   // Consider a 1 when more than 1/20 of the accesses were cache misses
     // Fine tune divisor
