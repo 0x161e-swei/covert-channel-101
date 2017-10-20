@@ -87,7 +87,7 @@ int main(int argc, char **argv)
 #endif	
       }
     }
-    
+    break;
   } // while loop
   
   printf("Sender finished :) \n");

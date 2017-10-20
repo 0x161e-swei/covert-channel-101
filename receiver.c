@@ -26,35 +26,41 @@ bool detect_bit(struct state *state) {
 	hits++;
       }
     }
-    // Busy loop to give time to the sender
-    // The number of cycles of this loop are currently
-    // decided by the program first argument.
-    /* for (int junk = 0; junk < state->wait_cycles_between_measurements && clock()-start_t < interval ; junk++) {} */
-    /* printf("before junk time taken taken by CPU: %ld\n", clock()-start_t  ); */
+    /* Busy loop to give time to the sender */
+    /* The number of cycles of this loop are currently */
+    /* decided by the program first argument. */
     for (int junk = 0; junk < state->wait_cycles_between_measurements; junk++) {}
   }
   if (state->debug) {
     printf("Hits: %lld\n", hits);
     printf("Misses: %lld\n", misses);
   }
-  end_t = clock();
-  total_t = (end_t - start_t);
-  if (state->wait_cycles_between_measurements > 3000 &&  state->debug) 
+  
+  if (state->wait_cycles_between_measurements > 3000 &&  state->debug){
+    end_t = clock();
+    total_t = (end_t - start_t);
     printf("\n Total time taken by CPU: %ld\n", total_t);
-    
+  }
   // Consider a 1 when more than 1/20 of the accesses were cache misses
-  // WAJIH: Commenting this out for now. Not sure about theory about this
-  // Fine tune divisor
+    // Fine tune divisor
   return (misses < (state->iterations * CACHE_WAYS) / 40);
-  // Hard coded for now; will make threashold variable in future
-  /* return (misses < 20); */
 }
 
 /* convert 8 bit datastream into character and return */
-char conv_char(char *data){
-  return strtol(data,0,2);
+char* conv_char(char *data, int size,char *msg){
+  for (int i = 0; i<size;i++){
+    char tmp[8];
+    int k=0;
+    for (int j = i*8; j< ((i+1)*8) ; j++){
+      tmp[k++] = data[j];
+    }
+    char tm=strtol(tmp,0,2);
+    /* printf("wajih %s = %c \n",tmp,tm); */
+    msg[i] = tm;
+  }
+  msg[size]='\0';
+  return msg;
 }
-
 
 void init_state(struct state *state, int argc, char **argv) {
     int n = CACHE_WAYS;
@@ -94,43 +100,52 @@ void init_state(struct state *state, int argc, char **argv) {
 }
 
 int main(int argc, char **argv) {
+  // TODO: Hard coding some stuff for now
+  int max_buffer_len=1000;
+  int binary_msg_len=0;
+  
+  // Setup code
+  struct state state;
+  init_state(&state, argc, argv);
 
-    // Setup code
-    struct state state;
-    init_state(&state, argc, argv);
-
-    printf("Press enter to begin listening.\n");
-    char text_buf[128];
-    fgets(text_buf, sizeof(text_buf), stdin);
-    int receiving = 1;
-    char msg_ch[9];
-    while (receiving) {
-      /* char text_buf[128]; */
-      /* fgets(text_buf, sizeof(text_buf), stdin); */
-      // Small start bit detection small enough such
-      state.wait_cycles_between_measurements = 1000;
-      if (detect_bit(&state)){
-    	  /* printf("One detected.\n"); */
-    	}else{
-	if (state.debug) {	
-    	  printf("start bit detected.\n");
-	}
-	state.wait_cycles_between_measurements = 45000;
-	for (int i = 0; i < 8 ; i++){
-	  if (detect_bit(&state)){
-	      printf(" One ");
-	      msg_ch[i] = '1';
-	    }else{
-	      printf(" Zero ");
-	      msg_ch[i] = '0';
-	    }
+  printf("Press enter to begin listening.\n");
+  char text_buf[128];
+  fgets(text_buf, sizeof(text_buf), stdin);
+  char  msg_ch[max_buffer_len + 1];
+  while (1) {
+    /* char text_buf[128]; */
+    /* fgets(text_buf, sizeof(text_buf), stdin); */
+    // Small start bit detection small enough such
+    state.wait_cycles_between_measurements = 1000;
+    if (detect_bit(&state)){
+      /* printf("One detected.\n"); */
+    }else{
+      if (state.debug) {	
+	printf("Start bit detected.\n");
+      }
+      state.wait_cycles_between_measurements = 45000;
+      for (int i = 0; i < max_buffer_len ; i++){
+	if (detect_bit(&state)){
+	  /* printf(" One "); */
+	  msg_ch[i] = '1';
+	  if (i%8==0){
+	    printf("\n Stop bit stopped\n");
+	    break;
 	  }
-	  break;
-    	}
+	  binary_msg_len++;
+	}else{
+	  /* printf(" Zero "); */
+	  msg_ch[i] = '0';
+	  binary_msg_len++;
+	}
+      }
+      break;
     }
-    msg_ch[8] = '\0';
-    printf("%s\n", msg_ch);
-    printf("Receiver finished. \n");
-    printf("Character received = %c \n", conv_char(msg_ch));
-    return 0;
+  }
+  msg_ch[binary_msg_len] = '\0';
+  int ascii_msg_len = binary_msg_len/8;
+  char msg[ascii_msg_len+1];
+  printf("Binary string received %s\n", msg_ch);
+  printf("Message received = %s \n", conv_char(msg_ch, ascii_msg_len, msg));
+  return 0;
 }
