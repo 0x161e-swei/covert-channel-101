@@ -52,7 +52,7 @@ int main(int argc, char **argv)
 	clflush((ADDR_PTR) &buffer[i * two_o + j * two_o_s]);
       }
     }
-    long interval = 5500;
+    long interval = 5700;
     /* hardcoding for now */
     /* for (int junk = 0; junk < 2400000 && (clock() -start_t) < interval ; junk++) {} */
     end_t = clock();
