@@ -42,7 +42,8 @@ int main(int argc, char **argv)
     printf(msg);
     size_t msg_len = strlen(msg);
 
-    // Start Bit flush. It tells sender to start listening
+    // Start Bit flush. It tells receiver to start listening
+    // Flushing takes around 2400 Clock Time
     clock_t start_t, end_t, total_t;
     start_t = clock();
     /* i is the set index */
@@ -52,6 +53,7 @@ int main(int argc, char **argv)
 	clflush((ADDR_PTR) &buffer[i * two_o + j * two_o_s]);
       }
     }
+    // Constant Time interval for sender
     long interval = 5700;
     /* hardcoding for now */
     /* for (int junk = 0; junk < 2400000 && (clock() -start_t) < interval ; junk++) {} */
