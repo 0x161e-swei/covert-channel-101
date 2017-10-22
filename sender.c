@@ -48,7 +48,7 @@ void send_bit(bool one, struct state *state) {
     start_t = clock();
     curr_t = start_t;
 
-    if (!one) {
+    if (one) {
         while ((curr_t - start_t) < state->interval) {
 
             /* i is the set index */
@@ -92,20 +92,20 @@ int main(int argc, char **argv) {
 
         // Let the receiver detect that
         // I am about to send a string and sync
-        send_bit(false, &state);
         send_bit(true, &state);
-
         send_bit(false, &state);
+
         send_bit(true, &state);
-
         send_bit(false, &state);
+
         send_bit(true, &state);
-
         send_bit(false, &state);
+
         send_bit(true, &state);
+        send_bit(false, &state);
 
-        send_bit(false, &state);
-        send_bit(false, &state);
+        send_bit(true, &state);
+        send_bit(true, &state);
 
         // Send the string
         for (int ind = 0; ind < msg_len; ind++) {

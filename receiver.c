@@ -97,8 +97,8 @@ bool detect_bit(struct state *state, bool first_time) {
         }
     }
 
-    bool ret = ((first_time && misses <= miss_threshold) ||
-            (!first_time && misses < (float) total_measurements / 2.0));
+    bool ret = ((first_time && misses > miss_threshold) ||
+            (!first_time && misses > (float) total_measurements / 2.0));
 
     if (state->debug) {
         printf("Misses: %d out of %d --> %d\n", misses, total_measurements, ret);
@@ -109,7 +109,7 @@ bool detect_bit(struct state *state, bool first_time) {
 
 // This is the only hardcoded variable which defines the max size of a message
 // to be the same as the max size of the message in the starter code of the sender.
-static const int max_buffer_len = 128;
+static const int max_buffer_len = 128 * 8;
 
 int main(int argc, char **argv) {
     // Setup code
@@ -133,38 +133,40 @@ int main(int argc, char **argv) {
 
         // Check if the start sequence has been fully detected
         // and we are synchronized with the sender
-        if (start_sequence == 0 && detected == 0 && previous == 0) {
+        if (start_sequence == 0 && detected == 1 && previous == 1) {
             if (state.debug) {
                 printf("Start sequence detected.\n\n");
             }
 
             int binary_msg_len = 0;
+            int strike_zeros = 0;
             for (int i = 0; i < max_buffer_len; i++) {
+                binary_msg_len++;
 
                 if (detect_bit(&state, first_time)) {
-                    if (i % 8 == 0) {
-                        if (state.debug) {
-                            printf("String finished\n");
-                        }
-                        break;
-                    }
-
                     msg_ch[i] = '1';
+                    strike_zeros = 0;
 
                 } else {
                     msg_ch[i] = '0';
-                }
 
-                binary_msg_len++;
+                    if (++strike_zeros == 8) {
+                        if (state.debug) {
+                            printf("String finished\n");
+                        }
+
+                        break;
+                    }
+                }
             }
 
-            msg_ch[binary_msg_len] = '\0';
+            msg_ch[binary_msg_len - 7] = '\0';
             if (state.debug) {
                 printf("Binary string received %s\n", msg_ch);
             }
 
             int ascii_msg_len = binary_msg_len / 8;
-            char msg[ascii_msg_len + 1];
+            char msg[ascii_msg_len];
             printf("> %s\n", conv_char(msg_ch, ascii_msg_len, msg));
         }
 
