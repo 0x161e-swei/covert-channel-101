@@ -1,13 +1,3 @@
-
-// L1 properties
-static const int CACHE_SETS = 64;
-static const int CACHE_WAYS = 8;
-
-// L3 properties
-int cache_slices = 8;
-int cache_sets = 8192;
-int cache_ways = 16;
-
 int get_cache_slice(uint64_t phys_addr) {
     static const int h0[] = {6, 10, 12, 14, 16, 17, 18, 20, 22, 24, 25, 26, 27, 28, 30, 32, 33, 35, 36};
     static const int h1[] = {7, 11, 13, 15, 17, 19, 20, 21, 22, 23, 24, 26, 28, 29, 31, 33, 34, 35, 37};
@@ -44,43 +34,4 @@ int get_cache_slice(uint64_t phys_addr) {
 uint64_t get_cache_set_index(ADDR_PTR phys_addr) {
     uint64_t mask = ((uint64_t) 1 << 17) - 1;
     return (phys_addr & mask) >> 6;
-}
-
-void clflush(ADDR_PTR addr)
-{
-    asm volatile ("clflush (%0)" :: "r"(addr));
-}
-
-void evict_set(volatile uint8_t **addresses, int kill_count) {
-    for (size_t i = 0; i < kill_count; ++i) {
-        *addresses[i];
-        *addresses[i + 1];
-        *addresses[i];
-        *addresses[i + 1];
-    }
-}
-
-void access_set(volatile uint8_t **addresses, int probe_count) {
-    for (size_t i = 0; i < probe_count; ++i) {
-        *addresses[i];
-        *addresses[i + 1];
-        *addresses[i + 2];
-        *addresses[i];
-        *addresses[i + 1];
-        *addresses[i + 2];
-    }
-}
-
-int ipow(int base, int exp)
-{
-    int result = 1;
-    while (exp)
-    {
-        if (exp & 1)
-            result *= base;
-        exp >>= 1;
-        base *= base;
-    }
-
-    return result;
 }

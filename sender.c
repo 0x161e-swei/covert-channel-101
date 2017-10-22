@@ -1,101 +1,125 @@
 #include "util.h"
-#include "cache_utils.c"
 
-/* Taken from 
-https://stackoverflow.com/questions/41384262/convert-string-to-binary-in-c */
-char* stringToBinary(char* s) {
-  if(s == NULL) return 0; /* no input string */
-  size_t len = strlen(s)-1;
-  /* each char is one byte (8 bits) and + 1 at the end for null terminator */
-  char *binary = malloc(len*8 + 1); 
-  binary[0] = '\0';
-  for(size_t i = 0; i < len; ++i) {
-    char ch = s[i];
-    for(int j = 7; j >= 0; --j){
-      if(ch & (1 << j)) {
-	strcat(binary,"1");
-      } else {
-	strcat(binary,"0");
-      }
+struct state {
+    char *buffer;
+    int step_set;
+    int step_line;
+    int interval;
+    bool debug;
+};
+
+void init_state(struct state *state, int argc, char **argv) {
+    int n = CACHE_WAYS_L3;
+    int o = 6;                          // log_2(64), where 64 is the line size
+    int s = 13;                         // log_2(8192), where 8192 is the number of cache sets
+    int two_o = ipow(2, o);             // 64
+    int two_o_s = ipow(2, s) * two_o;   // 524,288
+    int b = n * two_o_s;                // size in bytes of the LLC
+
+    state->step_set = two_o;
+    state->step_line = two_o_s;
+    state->buffer = malloc((size_t) b);
+
+    // Set some default values; need to be tuned up
+    state->interval = 9200;
+    state->debug = false;
+
+    int option;
+    while ((option = getopt(argc, argv, "di:w:")) != -1) {
+        switch (option) {
+            case 'd':
+                state->debug = true;
+                break;
+            case 'i':
+                state->interval = atoi(optarg);
+                break;
+            case '?':
+                fprintf(stderr, "Unknown option character `\\x%x'.\n", optopt);
+                exit(1);
+            default:
+                exit(1);
+        }
     }
-  }
-  return binary;
 }
 
-int main(int argc, char **argv)
-{
-  /* Begin Setup code */
-  int n = cache_ways;
-  int o = 6;              // log_2(64), where 64 is the line size
-  int s = 13;             // log_2(8192), where 8192 is the number of cache sets
-  int two_o = ipow(2, o);             // 64
-  int two_o_s = ipow(2, s) * two_o;   // 524,288
-  int b = n * two_o_s;    // size in bytes of the LLC
-  /* End Setup code */
-  char *buffer = malloc((size_t) b);
-  int sending = 1;
-  while (sending) {
-    printf("Please type a message.\n");
-    char text_buf[128];
-    fgets(text_buf, sizeof(text_buf), stdin);
-    char* msg = stringToBinary(text_buf);
-    printf(msg);
-    size_t msg_len = strlen(msg);
+void send_bit(bool one, struct state *state) {
+    clock_t start_t, curr_t;
 
-    // Start Bit flush. It tells receiver to start listening
-    // Flushing takes around 2400 Clock Time
-    clock_t start_t, end_t, total_t;
     start_t = clock();
-    /* i is the set index */
-    for (int  i = 0; i < cache_sets; i++) {
-      /* j is the line index */
-      for (int j = 0; j < n; j++) {
-	clflush((ADDR_PTR) &buffer[i * two_o + j * two_o_s]);
-      }
-    }
-    // Constant Time interval for sender
-    long interval = 5700;
-    /* hardcoding for now */
-    /* for (int junk = 0; junk < 2400000 && (clock() -start_t) < interval ; junk++) {} */
-    end_t = clock();
-    total_t = (end_t - start_t);
-#ifdef DEBUG    
-    printf("Total time taken by CPU: %ld\n", total_t  );
-    printf("message len %d \n ", msg_len);
-#endif
+    curr_t = start_t;
 
-    for (int ind =0 ; ind < msg_len ; ind++){
-      if (msg[ind] == '0'){
-	start_t = clock();
-	while ((clock() -start_t) < interval){
-	  /* i is the set index */
-	  for (int i = 0; i < cache_sets && (clock() -start_t) < interval; i++) {
-	    /* j is the line index */
-	    for (int j = 0; j < n && (clock() -start_t) < interval; j++) {
-	      clflush((ADDR_PTR) &buffer[i * two_o + j * two_o_s]);
-	    }
-	  }
-	}
-	/* hardcoding for now */
+    if (!one) {
+        while ((curr_t - start_t) < state->interval) {
 
-	int junk=2;
-	/* for (junk = 0; junk < 2400000 && (clock() -start_t) < interval; junk++) {} */
-#ifdef DEBUG	
-	printf("\nTotal time taken by Flushing: %ld ; junk = %d\n", clock()- start_t, junk  );
-#endif	
-      }else{
-	start_t = clock();
-	/* hardcoding for now */
-	int junk;
-	for (junk = 0; junk < 4000000 &&  (clock() -start_t) < interval ; junk++) {}
-#ifdef DEBUG	
-	printf("\nTotal time taken by NOT Flushing: %ld ; junk = %d \n", clock()- start_t, junk  );
-#endif	
-      }
+            /* i is the set index */
+            for (int i = 0; i < CACHE_SETS_L3 && (curr_t - start_t) < state->interval; i++) {
+
+                /* j is the line index */
+                for (int j = 0; j < CACHE_WAYS_L3 && (curr_t - start_t) < state->interval; j++) {
+
+                    curr_t = clock();
+                    clflush((ADDR_PTR) (state->buffer + i * state->step_set + j * state->step_line));
+                }
+            }
+        }
+
+    } else {
+        start_t = clock();
+
+        while (clock() - start_t < state->interval) {}
     }
-    break;
-  } // while loop
-  
-  printf("Sender finished :) \n");
-  return 0;
+}
+
+int main(int argc, char **argv) {
+    // Setup code
+    struct state state;
+    init_state(&state, argc, argv);
+
+    int sending = 1;
+
+    printf("Please type a message.\n");
+    while (sending) {
+        printf("< ");
+        char text_buf[128];
+
+        fgets(text_buf, sizeof(text_buf), stdin);
+        char *msg = string_to_binary(text_buf);
+        if (state.debug) {
+            printf("%s\n", msg);
+        }
+
+        size_t msg_len = strlen(msg);
+
+        // Let the receiver detect that
+        // I am about to send a string and sync
+        send_bit(false, &state);
+        send_bit(true, &state);
+
+        send_bit(false, &state);
+        send_bit(true, &state);
+
+        send_bit(false, &state);
+        send_bit(true, &state);
+
+        send_bit(false, &state);
+        send_bit(true, &state);
+
+        send_bit(false, &state);
+        send_bit(false, &state);
+
+        // Send the string
+        for (int ind = 0; ind < msg_len; ind++) {
+
+            if (msg[ind] == '0') {
+                send_bit(false, &state);
+
+            } else {
+                send_bit(true, &state);
+            }
+        }
+
+    }
+
+    printf("Sender finished\n");
+    return 0;
 }

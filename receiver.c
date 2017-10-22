@@ -1,74 +1,15 @@
 #include "util.h"
-#include "cache_utils.c"
 
 struct state {
     char *buffer;
     int step;
-    int iterations;
+    int interval;
     int wait_cycles_between_measurements;
     bool debug;
 };
 
-bool detect_bit(struct state *state) {
-  clock_t start_t, end_t, total_t;
-  start_t = clock();
-  unsigned long long misses = 0;
-  unsigned long long hits = 0;
-
-  for (int k = 0; k < state->iterations; k++) {
-    for (int i = 0; i < CACHE_WAYS; i++) {
-      CYCLES time = measure_one_block_access_time((ADDR_PTR) (state->buffer + state->step * i));
-      // printf("%" PRIx64 "\n", (uint64_t) (buffer + two_o_s * i));
-      // printf("Time %d: %d\n", i, time);
-      if (time > 80) {
-	misses++;
-      } else {
-	hits++;
-      }
-    }
-    /* Busy loop to give time to the sender */
-    /* The number of cycles of this loop are currently */
-    /* decided by the program first argument. */
-    for (int junk = 0; junk < state->wait_cycles_between_measurements; junk++) {}
-  }
-  if (state->debug) {
-    printf("Hits: %lld\n", hits);
-    printf("Misses: %lld\n", misses);
-  }
-  /* clock_t w_start=clock(); */
-  if(misses > 22 && misses < 50){
-    for (int junk = 0; junk < 20000; junk++) {}
-    printf("extending time\n");
-  }
-  /* printf("\n extending time by CPU: %ld\n",clock()-w_start); */
-  if (state->wait_cycles_between_measurements > 3000 ){
-    end_t = clock();
-    total_t = (end_t - start_t);
-    printf("\n Total time taken by CPU: %ld\n", total_t);
-  }
-  // Consider a 1 when more than 1/20 of the accesses were cache misses
-    // Fine tune divisor
-  return (misses < (state->iterations * CACHE_WAYS) / 40);
-}
-
-/* convert 8 bit datastream into character and return */
-char* conv_char(char *data, int size,char *msg){
-  for (int i = 0; i<size;i++){
-    char tmp[8];
-    int k=0;
-    for (int j = i*8; j< ((i+1)*8) ; j++){
-      tmp[k++] = data[j];
-    }
-    char tm=strtol(tmp,0,2);
-    /* printf("wajih %s = %c \n",tmp,tm); */
-    msg[i] = tm;
-  }
-  msg[size]='\0';
-  return msg;
-}
-
 void init_state(struct state *state, int argc, char **argv) {
-    int n = CACHE_WAYS;
+    int n = CACHE_WAYS_L1;
     int o = 6;              // log_2(64), where 64 is the line size
     int s = 6;              // log_2(64), where 64 is the number of cache sets
 
@@ -79,10 +20,10 @@ void init_state(struct state *state, int argc, char **argv) {
     state->buffer = malloc((size_t) b);
 
     // Set some default values; need to be tuned up
-    state->iterations = 100;
-    state->wait_cycles_between_measurements = 45000;
+    state->interval = 9200;
+    state->wait_cycles_between_measurements = 9200;
     state->debug = false;
-      
+
     int option;
     while ((option = getopt(argc, argv, "di:w:")) != -1) {
         switch (option) {
@@ -90,7 +31,7 @@ void init_state(struct state *state, int argc, char **argv) {
                 state->debug = true;
                 break;
             case 'i':
-                state->iterations = atoi(optarg);
+                state->interval = atoi(optarg);
                 break;
             case 'w':
                 state->wait_cycles_between_measurements = atoi(optarg);
@@ -104,53 +45,149 @@ void init_state(struct state *state, int argc, char **argv) {
     }
 }
 
-int main(int argc, char **argv) {
-  // TODO: Hard coding some stuff for now
-  int max_buffer_len=1000;
-  int binary_msg_len=0;
-  
-  // Setup code
-  struct state state;
-  init_state(&state, argc, argv);
+bool detect_bit(struct state *state, bool first_time) {
+    clock_t start_t, curr_t;
+    start_t = clock();
+    curr_t = start_t;
 
-  printf("Press enter to begin listening.\n");
-  char text_buf[128];
-  fgets(text_buf, sizeof(text_buf), stdin);
-  char  msg_ch[max_buffer_len + 1];
-  while (1) {
-    /* char text_buf[128]; */
-    /* fgets(text_buf, sizeof(text_buf), stdin); */
-    // Start bit detection cycle should be small
-    state.wait_cycles_between_measurements = 1000;
-    if (detect_bit(&state)){
-      /* printf("One detected.\n"); */
-    }else{
-      if (state.debug) {	
-	printf("Start bit detected.\n");
-      }
-      state.wait_cycles_between_measurements = 45000;
-      for (int i = 0; i < max_buffer_len ; i++){
-	if (detect_bit(&state)){
-	  /* printf(" One "); */
-	  msg_ch[i] = '1';
-	  if (i%8==0){
-	    printf("\n Stop bit stopped\n");
-	    break;
-	  }
-	  binary_msg_len++;
-	}else{
-	  /* printf(" Zero "); */
-	  msg_ch[i] = '0';
-	  binary_msg_len++;
-	}
-      }
-      break;
+    int misses = 0;
+    int hits = 0;
+    int total_measurements = 0;
+
+    while ((curr_t - start_t) < state->interval) {
+        for (int i = 3; i < CACHE_WAYS_L1 && (curr_t - start_t) < state->interval; i++) {
+            CYCLES time = measure_one_block_access_time((ADDR_PTR) (state->buffer + state->step * i));
+            // printf("%" PRIx64 "\n", (uint64_t) (buffer + two_o_s * i));
+            // printf("Time %d: %d\n", i, time);
+
+            curr_t = clock();
+
+            // Exclude disk misses
+            if (time < 1000) {
+                total_measurements++;
+
+                // This is high because the misses caused by
+                // clflush usually take longer than 150 cycles
+                if (time > 150) {
+                    misses++;
+                } else {
+                    hits++;
+                }
+            }
+
+            // Busy loop to give time to the sender
+            for (int junk = 0; junk < state->wait_cycles_between_measurements &&
+                    (curr_t - start_t) < state->interval; junk++) {
+                curr_t = clock();
+            }
+        }
     }
-  }
-  msg_ch[binary_msg_len] = '\0';
-  int ascii_msg_len = binary_msg_len/8;
-  char msg[ascii_msg_len+1];
-  printf("Binary string received %s\n", msg_ch);
-  printf("Message received = %s \n", conv_char(msg_ch, ascii_msg_len, msg));
-  return 0;
+
+    double miss_threshold = (float) total_measurements / 8.0;
+    if (first_time && misses > miss_threshold) {
+        start_t = clock();
+        double expected_for_a_one = (float) total_measurements / 1.2;
+        double ratio = (1 - misses / expected_for_a_one);
+        double tres = state->interval * ratio;
+
+        while (clock() - start_t < tres) {}
+
+        if (state->debug) {
+            printf("\nSynchronizing forward of %.2f\n", ratio);
+        }
+    }
+
+    bool ret = ((first_time && misses <= miss_threshold) ||
+            (!first_time && misses < (float) total_measurements / 2.0));
+
+    if (state->debug) {
+        printf("Misses: %d out of %d --> %d\n", misses, total_measurements, ret);
+    }
+
+    return ret;
+}
+
+// This is the only hardcoded variable which defines the max size of a message
+// to be the same as the max size of the message in the starter code of the sender.
+static const int max_buffer_len = 128;
+
+int main(int argc, char **argv) {
+    // Setup code
+    struct state state;
+    init_state(&state, argc, argv);
+
+    printf("Press enter to begin listening ");
+    char text_buf[128];
+    fgets(text_buf, sizeof(text_buf), stdin);
+    char msg_ch[max_buffer_len + 1];
+
+    int start_sequence = 4;
+    bool first_time = true;
+
+    bool detected;
+    bool previous = true;
+
+    bool receiving = 1;
+    while (receiving) {
+        detected = detect_bit(&state, first_time);
+
+        // Check if the start sequence has been fully detected
+        // and we are synchronized with the sender
+        if (start_sequence == 0 && detected == 0 && previous == 0) {
+            if (state.debug) {
+                printf("Start sequence detected.\n\n");
+            }
+
+            int binary_msg_len = 0;
+            for (int i = 0; i < max_buffer_len; i++) {
+
+                if (detect_bit(&state, first_time)) {
+                    if (i % 8 == 0) {
+                        if (state.debug) {
+                            printf("String finished\n");
+                        }
+                        break;
+                    }
+
+                    msg_ch[i] = '1';
+
+                } else {
+                    msg_ch[i] = '0';
+                }
+
+                binary_msg_len++;
+            }
+
+            msg_ch[binary_msg_len] = '\0';
+            if (state.debug) {
+                printf("Binary string received %s\n", msg_ch);
+            }
+
+            int ascii_msg_len = binary_msg_len / 8;
+            char msg[ascii_msg_len + 1];
+            printf("> %s\n", conv_char(msg_ch, ascii_msg_len, msg));
+        }
+
+        // Check if the first part of the start sequence has been already
+        // fully detected, but we are waiting for the trailing zeros
+        else if (start_sequence == 0 && detected != previous) {
+
+            // Do nothing in this case
+        }
+
+        // Look for the first part of the start sequence (1010)
+        else if (start_sequence > 0 && detected != previous) {
+            start_sequence--;
+            first_time = false;
+        }
+
+        else {
+            start_sequence = 4;
+            first_time = true;
+        }
+
+        previous = detected;
+    }
+
+    return 0;
 }
