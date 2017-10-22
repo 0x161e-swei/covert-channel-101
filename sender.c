@@ -63,19 +63,23 @@ int main(int argc, char **argv)
     printf("Total time taken by CPU: %ld\n", total_t  );
     printf("message len %d \n ", msg_len);
 #endif
+
     for (int ind =0 ; ind < msg_len ; ind++){
       if (msg[ind] == '0'){
 	start_t = clock();
-	/* i is the set index */
-	for (int i = 0; i < cache_sets; i++) {
-	  /* j is the line index */
-	  for (int j = 0; j < n; j++) {
-	    clflush((ADDR_PTR) &buffer[i * two_o + j * two_o_s]);
+	while ((clock() -start_t) < interval){
+	  /* i is the set index */
+	  for (int i = 0; i < cache_sets && (clock() -start_t) < interval; i++) {
+	    /* j is the line index */
+	    for (int j = 0; j < n && (clock() -start_t) < interval; j++) {
+	      clflush((ADDR_PTR) &buffer[i * two_o + j * two_o_s]);
+	    }
 	  }
 	}
 	/* hardcoding for now */
-	int junk;
-	for (junk = 0; junk < 2400000 && (clock() -start_t) < interval; junk++) {}
+
+	int junk=2;
+	/* for (junk = 0; junk < 2400000 && (clock() -start_t) < interval; junk++) {} */
 #ifdef DEBUG	
 	printf("\nTotal time taken by Flushing: %ld ; junk = %d\n", clock()- start_t, junk  );
 #endif	
