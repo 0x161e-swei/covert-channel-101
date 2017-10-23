@@ -1,15 +1,10 @@
-
 CFLAGS=-O0 -I /usr/local
 CC=gcc
-
 
 TARGETS=sender
 UTILS=util.o 
 
 all: $(TARGETS)
-
-debug: CFLAGS += -DDEBUG -g
-debug: $(TARGETS)
 
 $(UTILS): %.o: %.c %.h
 	$(CC) $(CFLAGS) -c $<

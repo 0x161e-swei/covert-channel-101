@@ -1,7 +1,5 @@
-
-CFLAGS=-I /usr/local
+CFLAGS=-O0 -I /usr/local
 CC=gcc
-
 
 TARGETS=receiver
 UTILS=util.o 
