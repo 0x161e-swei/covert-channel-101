@@ -192,11 +192,10 @@ int main(int argc, char **argv)
 	bool first_time = true;
 	bool current;
 	bool previous = true;
-	bool receiving = 1;
 
 	printf("Press enter to begin listening ");
 	getchar();
-	while (receiving) {
+	while (1) {
 		current = detect_bit(&state, first_time);
 
 		// This receiving loop is a sort of finite state machine.
@@ -256,6 +255,9 @@ int main(int argc, char **argv)
 			int ascii_msg_len = binary_msg_len / 8;
 			char msg[ascii_msg_len];
 			printf("> %s\n", conv_char(msg_ch, ascii_msg_len, msg));
+			if (strcmp(msg, "exit") == 0) {
+				break;
+			}
 		}
 
 		else if (flip_sequence > 0 && current != previous) {

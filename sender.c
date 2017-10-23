@@ -123,6 +123,10 @@ int main(int argc, char **argv)
 		char text_buf[128];
 		fgets(text_buf, sizeof(text_buf), stdin);
 
+		if (strcmp(text_buf, "exit\n") == 0) {
+			sending = 0;
+		}
+
 		// Convert that message to binary
 		char *msg = string_to_binary(text_buf);
 		if (state.debug) {
