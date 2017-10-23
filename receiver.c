@@ -60,7 +60,9 @@ bool detect_bit(struct state *state, bool first_time) {
     int misses = 0;
     int hits = 0;
     int total_measurements = 0;
-
+    // This is high because the misses caused by
+    // clflush usually take longer than 150 cycles
+    int misses_time_threshold = 150;
     while ((curr_t - start_t) < state->interval) {
 
         struct Node *current = state->probing_set;
@@ -75,10 +77,7 @@ bool detect_bit(struct state *state, bool first_time) {
             // Exclude disk misses
             if (time < 1000) {
                 total_measurements++;
-
-                // This is high because the misses caused by
-                // clflush usually take longer than 150 cycles
-                if (time > 150) {
+                if (time > misses_time_threshold) {
                     misses++;
                 } else {
                     hits++;
@@ -126,9 +125,9 @@ int main(int argc, char **argv) {
     struct state state;
     init_state(&state, argc, argv);
 
-    printf("Press enter to begin listening ");
-    char text_buf[128];
-    fgets(text_buf, sizeof(text_buf), stdin);
+    printf("Press enter to begin listening \n ");
+    getchar();
+
     char msg_ch[max_buffer_len + 1];
 
     int start_sequence = 4;
@@ -164,7 +163,6 @@ int main(int argc, char **argv) {
                         if (state.debug) {
                             printf("String finished\n");
                         }
-
                         break;
                     }
                 }
@@ -183,7 +181,6 @@ int main(int argc, char **argv) {
         // Check if the first part of the start sequence has been already
         // fully detected, but we are waiting for the trailing zeros
         else if (start_sequence == 0 && detected != previous) {
-
             // Do nothing in this case
         }
 
@@ -192,14 +189,11 @@ int main(int argc, char **argv) {
             start_sequence--;
             first_time = false;
         }
-
         else {
             start_sequence = 4;
             first_time = true;
         }
-
         previous = detected;
-    }
-
+    } // Main while loop
     return 0;
 }
