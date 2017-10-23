@@ -20,7 +20,7 @@ void init_state(struct state *state, int argc, char **argv) {
 
     // Set some default values; need to be tuned up
     state->interval = 160;
-    state->wait_cycles_between_measurements = 160;
+    state->wait_cycles_between_measurements = 30;
     state->debug = false;
     state->probing_set = NULL;
 
