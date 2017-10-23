@@ -23,16 +23,22 @@
 #define CYCLES uint32_t
 
 struct Node {
-    ADDR_PTR addr;
-    struct Node *next;
+	ADDR_PTR addr;
+	struct Node *next;
 };
 
 CYCLES measure_one_block_access_time(ADDR_PTR addr);
+
 void clflush(ADDR_PTR addr);
+
 int ipow(int base, int exp);
+
 char *string_to_binary(char *s);
+
 char *conv_char(char *data, int size, char *msg);
+
 uint64_t get_cache_set_index(ADDR_PTR phys_addr);
+
 void append_string_to_linked_list(struct Node **head, ADDR_PTR addr);
 
 // L1 properties
