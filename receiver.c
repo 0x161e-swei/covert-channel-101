@@ -2,7 +2,7 @@
 
 struct state {
     char *buffer;
-    int step;
+    struct Node *probing_set;
     int interval;
     int wait_cycles_between_measurements;
     bool debug;
@@ -14,15 +14,22 @@ void init_state(struct state *state, int argc, char **argv) {
     int s = 6;              // log_2(64), where 64 is the number of cache sets
 
     int two_o_s = ipow(2, o + s);       // 4096
-    int b = n * two_o_s;                // 32,768
+    int b = 2 * n * two_o_s;                // 32,768
 
-    state->step = two_o_s;
     state->buffer = malloc((size_t) b);
 
     // Set some default values; need to be tuned up
-    state->interval = 9200;
-    state->wait_cycles_between_measurements = 9200;
+    state->interval = 160;
+    state->wait_cycles_between_measurements = 160;
     state->debug = false;
+    state->probing_set = NULL;
+
+    for (int i = 0; i < 2 * n; i++) {
+        ADDR_PTR addr = (ADDR_PTR) (state->buffer + two_o_s * i);
+        if (get_cache_set_index(addr) == 0x0) {
+            append_string_to_linked_list(&state->probing_set, addr);
+        }
+    }
 
     int option;
     while ((option = getopt(argc, argv, "di:w:")) != -1) {
@@ -55,12 +62,15 @@ bool detect_bit(struct state *state, bool first_time) {
     int total_measurements = 0;
 
     while ((curr_t - start_t) < state->interval) {
-        for (int i = 3; i < CACHE_WAYS_L1 && (curr_t - start_t) < state->interval; i++) {
-            CYCLES time = measure_one_block_access_time((ADDR_PTR) (state->buffer + state->step * i));
-            // printf("%" PRIx64 "\n", (uint64_t) (buffer + two_o_s * i));
-            // printf("Time %d: %d\n", i, time);
+
+        struct Node *current = state->probing_set;
+        while (current != NULL && (curr_t - start_t) < state->interval) {
+            ADDR_PTR addr = current->addr;
+            CYCLES time = measure_one_block_access_time(addr);
+            // printf("Time: %d\n", time);
 
             curr_t = clock();
+            current = current->next;
 
             // Exclude disk misses
             if (time < 1000) {
@@ -77,7 +87,7 @@ bool detect_bit(struct state *state, bool first_time) {
 
             // Busy loop to give time to the sender
             for (int junk = 0; junk < state->wait_cycles_between_measurements &&
-                    (curr_t - start_t) < state->interval; junk++) {
+                               (curr_t - start_t) < state->interval; junk++) {
                 curr_t = clock();
             }
         }
@@ -150,7 +160,7 @@ int main(int argc, char **argv) {
                 } else {
                     msg_ch[i] = '0';
 
-                    if (++strike_zeros == 8) {
+                    if (++strike_zeros >= 8 && i % 8 == 0) {
                         if (state.debug) {
                             printf("String finished\n");
                         }

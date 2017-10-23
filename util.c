@@ -86,3 +86,38 @@ char *conv_char(char *data, int size, char *msg) {
 	msg[size] = '\0';
 	return msg;
 }
+
+uint64_t get_cache_set_index(ADDR_PTR phys_addr) {
+	uint64_t mask = ((uint64_t) 1 << 16) - 1;
+	return (phys_addr & mask) >> 6;
+}
+
+/*
+ * Appends the given string to the linked list which is pointed to by the given head
+ */
+void append_string_to_linked_list(struct Node **head, ADDR_PTR addr) {
+    struct Node *current = *head;
+
+    /*
+     * Create the new node to append to the linked list
+     */
+    struct Node *new_node = malloc(sizeof(*new_node));
+    new_node->addr = addr;
+    new_node->next = NULL;
+
+    /*
+     * If the linked list is empty, just make the head to be this new node
+     */
+    if (current == NULL)
+        *head = new_node;
+
+    /*
+     * Otherwise, go till the last node and append the new node after it
+     */
+    else {
+        while (current->next != NULL)
+            current = current->next;
+
+        current->next = new_node;
+    }
+}
