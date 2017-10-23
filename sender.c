@@ -9,6 +9,8 @@ struct state {
 };
 
 void init_state(struct state *state, int argc, char **argv) {
+    /* Following calculations are based on */
+    /* 	C5: Cross-Cores Cache Covert Channel (dimva 2015) paper */
     int n = CACHE_WAYS_L3;
     int o = 6;                          // log_2(64), where 64 is the line size
     int s = 13;                         // log_2(8192), where 8192 is the number of cache sets
@@ -65,7 +67,6 @@ void send_bit(bool one, struct state *state) {
 
     } else {
         start_t = clock();
-
         while (clock() - start_t < state->interval) {}
     }
 }
@@ -75,10 +76,8 @@ int main(int argc, char **argv) {
     struct state state;
     init_state(&state, argc, argv);
 
-    int sending = 1;
-
     printf("Please type a message.\n");
-    while (sending) {
+    while (1) {
         printf("< ");
         char text_buf[128];
 
@@ -91,35 +90,22 @@ int main(int argc, char **argv) {
         size_t msg_len = strlen(msg);
 
         // Let the receiver detect that
-        // I am about to send a string and sync
-        send_bit(true, &state);
-        send_bit(false, &state);
-
-        send_bit(true, &state);
-        send_bit(false, &state);
-
-        send_bit(true, &state);
-        send_bit(false, &state);
-
-        send_bit(true, &state);
-        send_bit(false, &state);
-
+        // I am about to send a start string and sync
+	for (int i = 0 ; i< 8 ; i++){
+	    send_bit(i%2 == 0, &state);
+	}
         send_bit(true, &state);
         send_bit(true, &state);
 
-        // Send the string
+        // Send the message
         for (int ind = 0; ind < msg_len; ind++) {
-
             if (msg[ind] == '0') {
                 send_bit(false, &state);
-
             } else {
                 send_bit(true, &state);
             }
         }
-
-    }
-
+    }// Main while loop
     printf("Sender finished\n");
     return 0;
 }
