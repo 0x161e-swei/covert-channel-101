@@ -272,5 +272,6 @@ int main(int argc, char **argv)
 		previous = current;
 	}
 
+	printf("Receiver finished\n");
 	return 0;
 }
