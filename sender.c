@@ -19,7 +19,7 @@ struct state {
 void init_state(struct state *state, int argc, char **argv)
 {
     // The following calculations are based on the paper:
-    //        C5: Cross-Cores Cache Covert Channel (dimva 2015)
+    //      C5: Cross-Cores Cache Covert Channel (dimva 2015)
     int n = CACHE_WAYS_L3;
     int o = 6;                          // log_2(64), where 64 is the line size
     int s = 13;                         // log_2(8192), where 8192 is the number of cache sets
@@ -40,8 +40,7 @@ void init_state(struct state *state, int argc, char **argv)
     state->interval = 160;
 
     // Construct the eviction_set by taking the addresses that have cache set index 0
-    // There should be 128 such addresses in our buffer:
-    //                one per line per cache set 0 of each slice (8 * 16).
+    // There should be 128 such addresses in our buffer: one per line per cache set 0 of each slice (8 * 16).
     for (int set_index = 0; set_index < CACHE_SETS_L3; set_index++) {
         for (int line_index = 0; line_index < CACHE_WAYS_L3; line_index++) {
 
@@ -53,9 +52,9 @@ void init_state(struct state *state, int argc, char **argv)
     }
 
     // Parse the command line flags
-    //                -d is used to enable the debug prints
-    //                -b is used to enable the benchmark mode (to measure the sending bitrate)
-    //                -i is used to specify a custom value for the time interval
+    //      -d is used to enable the debug prints
+    //      -b is used to enable the benchmark mode (to measure the sending bitrate)
+    //      -i is used to specify a custom value for the time interval
     int option;
     while ((option = getopt(argc, argv, "di:w:b")) != -1) {
         switch (option) {

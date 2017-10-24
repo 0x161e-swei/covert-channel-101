@@ -19,7 +19,7 @@ struct state {
 void init_state(struct state *state, int argc, char **argv)
 {
     // The following calculations are based on the paper:
-    //                 C5: Cross-Cores Cache Covert Channel (dimva 2015)
+    //      C5: Cross-Cores Cache Covert Channel (dimva 2015)
     int n = CACHE_WAYS_L1;
     int o = 6;                          // log_2(64), where 64 is the line size
     int s = 6;                          // log_2(64), where 64 is the number of cache sets in the L1
@@ -48,9 +48,9 @@ void init_state(struct state *state, int argc, char **argv)
     }
 
     // Parse the command line flags
-    //        -d is used to enable the debug prints
-    //        -i is used to specify a custom value for the time interval
-    //        -w is used to specify a custom number of wait cycles between two probes
+    //      -d is used to enable the debug prints
+    //      -i is used to specify a custom value for the time interval
+    //      -w is used to specify a custom number of wait cycles between two probes
     int option;
     while ((option = getopt(argc, argv, "di:w:")) != -1) {
         switch (option) {
