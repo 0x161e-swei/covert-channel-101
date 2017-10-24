@@ -4,21 +4,21 @@
 /* Measure the time it takes to access a block with virtual address addr. */
 CYCLES measure_one_block_access_time(ADDR_PTR addr)
 {
-	CYCLES cycles;
+    CYCLES cycles;
 
-	asm volatile("mov %1, %%r8\n\t"
-			"lfence\n\t"
-			"rdtsc\n\t"
-			"mov %%eax, %%edi\n\t"
-			"mov (%%r8), %%r8\n\t"
-			"lfence\n\t"
-			"rdtsc\n\t"
-			"sub %%edi, %%eax\n\t"
-	: "=a"(cycles) /*output*/
-	: "r"(addr)
-	: "r8", "edi");
+    asm volatile("mov %1, %%r8\n\t"
+            "lfence\n\t"
+            "rdtsc\n\t"
+            "mov %%eax, %%edi\n\t"
+            "mov (%%r8), %%r8\n\t"
+            "lfence\n\t"
+            "rdtsc\n\t"
+            "sub %%edi, %%eax\n\t"
+    : "=a"(cycles) /*output*/
+    : "r"(addr)
+    : "r8", "edi");
 
-	return cycles;
+    return cycles;
 }
 
 /*
@@ -26,15 +26,15 @@ CYCLES measure_one_block_access_time(ADDR_PTR addr)
  */
 int ipow(int base, int exp)
 {
-	int result = 1;
-	while (exp) {
-		if (exp & 1)
-			result *= base;
-		exp >>= 1;
-		base *= base;
-	}
+    int result = 1;
+    while (exp) {
+        if (exp & 1)
+            result *= base;
+        exp >>= 1;
+        base *= base;
+    }
 
-	return result;
+    return result;
 }
 
 /*
@@ -42,8 +42,8 @@ int ipow(int base, int exp)
  */
 uint64_t get_cache_set_index(ADDR_PTR phys_addr)
 {
-	uint64_t mask = ((uint64_t) 1 << 16) - 1;
-	return (phys_addr & mask) >> 6;
+    uint64_t mask = ((uint64_t) 1 << 16) - 1;
+    return (phys_addr & mask) >> 6;
 }
 
 /*
@@ -51,7 +51,7 @@ uint64_t get_cache_set_index(ADDR_PTR phys_addr)
  */
 void clflush(ADDR_PTR addr)
 {
-	asm volatile ("clflush (%0)"::"r"(addr));
+    asm volatile ("clflush (%0)"::"r"(addr));
 }
 
 /*
@@ -61,26 +61,26 @@ void clflush(ADDR_PTR addr)
  */
 char *string_to_binary(char *s)
 {
-	if (s == NULL) return 0; /* no input string */
+    if (s == NULL) return 0; /* no input string */
 
-	size_t len = strlen(s) - 1;
+    size_t len = strlen(s) - 1;
 
-	// Each char is one byte (8 bits) and + 1 at the end for null terminator
-	char *binary = malloc(len * 8 + 1);
-	binary[0] = '\0';
+    // Each char is one byte (8 bits) and + 1 at the end for null terminator
+    char *binary = malloc(len * 8 + 1);
+    binary[0] = '\0';
 
-	for (size_t i = 0; i < len; ++i) {
-		char ch = s[i];
-		for (int j = 7; j >= 0; --j) {
-			if (ch & (1 << j)) {
-				strcat(binary, "1");
-			} else {
-				strcat(binary, "0");
-			}
-		}
-	}
+    for (size_t i = 0; i < len; ++i) {
+        char ch = s[i];
+        for (int j = 7; j >= 0; --j) {
+            if (ch & (1 << j)) {
+                strcat(binary, "1");
+            } else {
+                strcat(binary, "0");
+            }
+        }
+    }
 
-	return binary;
+    return binary;
 }
 
 /*
@@ -88,20 +88,20 @@ char *string_to_binary(char *s)
  */
 char *conv_char(char *data, int size, char *msg)
 {
-	for (int i = 0; i < size; i++) {
-		char tmp[8];
-		int k = 0;
+    for (int i = 0; i < size; i++) {
+        char tmp[8];
+        int k = 0;
 
-		for (int j = i * 8; j < ((i + 1) * 8); j++) {
-			tmp[k++] = data[j];
-		}
+        for (int j = i * 8; j < ((i + 1) * 8); j++) {
+            tmp[k++] = data[j];
+        }
 
-		char tm = strtol(tmp, 0, 2);
-		msg[i] = tm;
-	}
+        char tm = strtol(tmp, 0, 2);
+        msg[i] = tm;
+    }
 
-	msg[size] = '\0';
-	return msg;
+    msg[size] = '\0';
+    return msg;
 }
 
 /*
@@ -109,22 +109,22 @@ char *conv_char(char *data, int size, char *msg)
  */
 void append_string_to_linked_list(struct Node **head, ADDR_PTR addr)
 {
-	struct Node *current = *head;
+    struct Node *current = *head;
 
-	// Create the new node to append to the linked list
-	struct Node *new_node = malloc(sizeof(*new_node));
-	new_node->addr = addr;
-	new_node->next = NULL;
+    // Create the new node to append to the linked list
+    struct Node *new_node = malloc(sizeof(*new_node));
+    new_node->addr = addr;
+    new_node->next = NULL;
 
-	// If the linked list is empty, just make the head to be this new node
-	if (current == NULL)
-		*head = new_node;
+    // If the linked list is empty, just make the head to be this new node
+    if (current == NULL)
+        *head = new_node;
 
-		// Otherwise, go till the last node and append the new node after it
-	else {
-		while (current->next != NULL)
-			current = current->next;
+        // Otherwise, go till the last node and append the new node after it
+    else {
+        while (current->next != NULL)
+            current = current->next;
 
-		current->next = new_node;
-	}
+        current->next = new_node;
+    }
 }

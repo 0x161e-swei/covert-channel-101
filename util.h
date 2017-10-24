@@ -23,8 +23,8 @@
 #define CYCLES uint32_t
 
 struct Node {
-	ADDR_PTR addr;
-	struct Node *next;
+    ADDR_PTR addr;
+    struct Node *next;
 };
 
 CYCLES measure_one_block_access_time(ADDR_PTR addr);
