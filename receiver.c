@@ -258,6 +258,7 @@ int main(int argc, char **argv)
             if (strcmp(msg, "exit") == 0) {
                 break;
             }
+
         } else if (flip_sequence > 0 && current != previous) {
             flip_sequence--;
             first_time = false;

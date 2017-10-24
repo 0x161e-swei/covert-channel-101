@@ -1,4 +1,4 @@
-# LLC Covert Channel Chat [CS598CLF lab]
+# Chat on an LLC covert channel [CS598CLF lab]
 
 This repository contains a sender and a receiver that can be used to for a cross-process exchange of messages
 over a hardware covert channel on the last level cache.
@@ -10,7 +10,7 @@ The project guidelines are: http://cwfletcher.net/Content/598/lab598clf_v0-2.pdf
 
 ## How to use
 
-The client is made by a sender and a receiver. The sender allows to send messages to the receiver. 
+The client consists of a sender and a receiver, where the former allows to send messages to the latter. 
 The first step to use them is to compile both the sender and the receiver with the commands:
 
 ```sh
@@ -52,7 +52,7 @@ cycles/bit. Now it starts to be less accurate, and the receiver will often flip 
 ![Very fast benchmark](./usage/benchmark_fast_fast.gif?raw=true)
 
 Potentially one could achieve even faster bandwidths by playing with the `-i` parameter in the sender and the receiver
-and the `-w` parameter in the receiver, but the accuracy will become worse. 
+and the `-w` parameter in the receiver, but the accuracy may become worse. 
 
 ## Description of the covert channel
 
@@ -86,9 +86,10 @@ running on different cores.
 
 ## Challenges we ran into
 
-- We originally planned to try LLC covert channels which work by taking addresses only in some cache slices that the
-sender and the receiver agree upon. However, our implementation of that approach never worked and after several attempts, 
-we decided to give up on understanding the obscure function that maps addresses to cache slices on Intel processors.
+- We originally planned to use an LLC covert channel which would work by taking addresses in only certain cache slices
+that the sender and the receiver agree upon. However, our implementation of that approach never worked and, after
+several attempts, we decided to give up on understanding the obscure function that maps addresses to cache slices on
+Intel processors.
 
 - The other challenges we ran into were technical implementation details not mentioned in the any of the papers 
 we read that we had to figure out by trial and error. We documented them in comments in the source code.
