@@ -42,7 +42,7 @@ message (depending on the system noise).
 
 ![Fast benchmark](./usage/benchmark_fast.gif?raw=true)
 
-#### Super fast speed
+#### Lightening fast speed
 
 This is the bandwidths that our client can achieve when the time interval of sending one bit is lowered to 20 
 cycles/bit. Now it starts to be less accurate, and the receiver will often flip some bits in its received message 
