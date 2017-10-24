@@ -66,7 +66,7 @@ inclusive feature) cache.
 
 However, this covert channel had two limitations:
 
-1. It achieved a maximum speed of only about ~161 Bytes / second, since it required the sender to evict the entire LLC.
+1. It achieved a maximum speed of only about ~161 Bytes/second, since it required the sender to evict the entire LLC.
 2. It was easily susceptible to transmission errors.
 
 We fixed the aforementioned limitations by:
