@@ -114,7 +114,7 @@ int main(int argc, char **argv)
     clock_t start_t, end_t;
     int sending = 1;
 
-    printf("Please type a message.\n");
+    printf("Please type a message (exit to stop).\n");
     while (sending) {
 
         // Get a message to send from the user
