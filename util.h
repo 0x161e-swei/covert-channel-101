@@ -2,16 +2,15 @@
 // You may only use fgets() to pull input from stdin
 // You may use any print function to stdout to print 
 // out chat messages
+//
+// You may use memory allocators and helper functions
+// (e.g., rand()).  You may not use system().
 #include <stdio.h>
 #include <stdint.h>
 #include <stdbool.h>
 #include <stdarg.h>
 #include <getopt.h>
-
-// You may use memory allocators and helper functions 
-// (e.g., rand()).  You may not use system().
 #include <stdlib.h>
-#include <stdbool.h>
 #include <string.h>
 #include <inttypes.h>
 #include <time.h>
