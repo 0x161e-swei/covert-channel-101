@@ -1,12 +1,12 @@
 # Chat on an LLC covert channel [CS598CLF lab]
 
-This repository contains a sender and a receiver that can be used to for a cross-process exchange of messages
+This repository contains a sender and a receiver that can be used for a cross-process exchange of messages
 over a hardware covert channel on the last level cache.
 
 The project was done as part of the class [CS598CLF - Secure Processor Design][CS598CLF] held in the fall 2017 semester
 at the University of Illinois at Urbana-Champaign.
 
-The project guidelines are: http://cwfletcher.net/Content/598/lab598clf_v0-2.pdf
+The project guidelines are available at: http://cwfletcher.net/Content/598/lab598clf_v0-2.pdf
 
 ## How to use
 
