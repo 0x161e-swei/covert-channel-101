@@ -2,24 +2,12 @@
 #include "util.h"
 
 /* Measure the time it takes to access a block with virtual address addr. */
-CYCLES measure_one_block_access_time(ADDR_PTR addr)
-{
-    CYCLES cycles;
+extern CYCLES measure_one_block_access_time(ADDR_PTR addr);
 
-    asm volatile("mov %1, %%r8\n\t"
-            "lfence\n\t"
-            "rdtsc\n\t"
-            "mov %%eax, %%edi\n\t"
-            "mov (%%r8), %%r8\n\t"
-            "lfence\n\t"
-            "rdtsc\n\t"
-            "sub %%edi, %%eax\n\t"
-    : "=a"(cycles) /*output*/
-    : "r"(addr)
-    : "r8", "edi");
-
-    return cycles;
-}
+/*
+ * CLFlushes the given address.
+ */
+extern inline void clflush(ADDR_PTR addr);
 
 /*
  * Computes base to the exp.
@@ -38,21 +26,23 @@ int ipow(int base, int exp)
 }
 
 /*
+ * Returns the 6 virtual bits used index L1 cache sets of a given address.
+ */
+uint64_t get_L1_cache_set_index(ADDR_PTR phys_addr)
+{
+    uint64_t mask = ((uint64_t) 1 << (LOG_CACHE_SETS_L1 + LOG_CACHE_LINESIZE)) - 1;
+    return (phys_addr & mask) >> LOG_CACHE_LINESIZE;
+}
+
+/*
  * Returns the 10 bits cache set index of a given address.
  */
 uint64_t get_cache_set_index(ADDR_PTR phys_addr)
 {
     uint64_t mask = ((uint64_t) 1 << 16) - 1;
-    return (phys_addr & mask) >> 6;
+    return (phys_addr & mask) >> LOG_CACHE_LINESIZE;
 }
 
-/*
- * CLFlushes the given address.
- */
-void clflush(ADDR_PTR addr)
-{
-    asm volatile ("clflush (%0)"::"r"(addr));
-}
 
 /*
  * Convert a given ASCII string to a binary string.
@@ -128,3 +118,8 @@ void append_string_to_linked_list(struct Node **head, ADDR_PTR addr)
         current->next = new_node;
     }
 }
+
+void printPID() {
+    printf("Process ID: %lu\n", (uint64_t) getpid());
+}
+

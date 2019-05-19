@@ -8,6 +8,7 @@ struct state {
     char *buffer;
     struct Node *eviction_set;
     int interval;
+    uint64_t cache_region;
     bool debug;
     bool benchmark_mode;
 };
@@ -20,15 +21,15 @@ void init_state(struct state *state, int argc, char **argv)
 {
     // The following calculations are based on the paper:
     //      C5: Cross-Cores Cache Covert Channel (dimva 2015)
-    int n = CACHE_WAYS_L3;
-    int o = 6;                          // log_2(64), where 64 is the line size
-    int s = 13;                         // log_2(8192), where 8192 is the number of cache sets
-    int two_o = ipow(2, o);             // 64
-    int two_o_s = ipow(2, s) * two_o;   // 524,288
-    int b = n * two_o_s;                // size in bytes of the LLC = 8,388,608
+    int L3_way_stride = ipow(2, LOG_CACHE_SETS_L3 + LOG_CACHE_LINESIZE);
+    int bsize = CACHE_WAYS_L3 * L3_way_stride;
 
     // Allocate a buffer of the size of the LLC
-    state->buffer = malloc((size_t) b);
+    state->buffer = malloc((size_t) bsize);
+    // for (uint32_t i = 0; i < b; i += 64) {
+    //     *(state->buffer + i) = 0x5;
+    // }
+    printf("buffer pointer addr %p\n", state->buffer);
 
     // Set some default state values.
     state->eviction_set = NULL;
@@ -38,25 +39,15 @@ void init_state(struct state *state, int argc, char **argv)
     // This number may need to be tuned up to the specific machine in use
     // NOTE: Make sure that interval is the same in both sender and receiver
     state->interval = 160;
+    state->cache_region = 0x0;
 
-    // Construct the eviction_set by taking the addresses that have cache set index 0
-    // There should be 128 such addresses in our buffer: one per line per cache set 0 of each slice (8 * 16).
-    for (int set_index = 0; set_index < CACHE_SETS_L3; set_index++) {
-        for (int line_index = 0; line_index < CACHE_WAYS_L3; line_index++) {
-
-            ADDR_PTR addr = (ADDR_PTR) (state->buffer + set_index * two_o + line_index * two_o_s);
-            if (get_cache_set_index(addr) == 0x0) {
-                append_string_to_linked_list(&state->eviction_set, addr);
-            }
-        }
-    }
 
     // Parse the command line flags
     //      -d is used to enable the debug prints
     //      -b is used to enable the benchmark mode (to measure the sending bitrate)
     //      -i is used to specify a custom value for the time interval
     int option;
-    while ((option = getopt(argc, argv, "di:w:b")) != -1) {
+    while ((option = getopt(argc, argv, "di:w:br:")) != -1) {
         switch (option) {
             case 'd':
                 state->debug = true;
@@ -67,6 +58,9 @@ void init_state(struct state *state, int argc, char **argv)
             case 'i':
                 state->interval = atoi(optarg);
                 break;
+            case 'r':
+                state->cache_region = atoi(optarg);
+                break;
             case '?':
                 fprintf(stderr, "Unknown option character `\\x%x'.\n", optopt);
                 exit(1);
@@ -74,6 +68,23 @@ void init_state(struct state *state, int argc, char **argv)
                 exit(1);
         }
     }
+
+    // Construct the eviction_set by taking the addresses that have cache set index 0
+    // There should be 128 such addresses in our buffer:
+    //  one per line per cache set 0 of each slice (8 * 16).
+    uint32_t eviction_set_size = 0;
+    for (int set_index = 0; set_index < CACHE_SETS_L3; set_index++) {
+        for (int line_index = 0; line_index < CACHE_WAYS_L3; line_index++) {
+
+            ADDR_PTR addr = (ADDR_PTR) (state->buffer + \
+                    set_index * CACHE_LINESIZE + line_index * L3_way_stride);
+            if (get_cache_set_index(addr) == state->cache_region) {
+                append_string_to_linked_list(&state->eviction_set, addr);
+                eviction_set_size++;
+            }
+        }
+    }
+    printf("Found eviction_set size of %u\n", eviction_set_size);
 }
 
 /*
@@ -81,7 +92,7 @@ void init_state(struct state *state, int argc, char **argv)
  * for the clock length of state->interval when we are sending a one, or by doing nothing
  * for the clock length of state->interval when we are sending a zero.
  */
-void send_bit(bool one, struct state *state)
+void send_bit(bool one, const struct state *state)
 {
     clock_t start_t, curr_t;
 
@@ -113,7 +124,7 @@ int main(int argc, char **argv)
     init_state(&state, argc, argv);
     clock_t start_t, end_t;
     int sending = 1;
-
+    printPID();
     printf("Please type a message (exit to stop).\n");
     while (sending) {
 

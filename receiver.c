@@ -8,6 +8,7 @@ struct state {
     char *buffer;
     struct Node *probing_set;
     int interval;
+    uint64_t cache_region;
     int wait_cycles_between_measurements;
     bool debug;
 };
@@ -20,14 +21,12 @@ void init_state(struct state *state, int argc, char **argv)
 {
     // The following calculations are based on the paper:
     //      C5: Cross-Cores Cache Covert Channel (dimva 2015)
-    int n = CACHE_WAYS_L1;
-    int o = 6;                          // log_2(64), where 64 is the line size
-    int s = 6;                          // log_2(64), where 64 is the number of cache sets in the L1
-    int two_o_s = ipow(2, o + s);       // 4096
-    int b = 2 * n * two_o_s;            // 32,768 * 2
+    int L1_way_stride = ipow(2, LOG_CACHE_SETS_L1 + LOG_CACHE_LINESIZE); // 4096
+    int bsize = 8 * CACHE_WAYS_L1 * L1_way_stride;
 
     // Allocate a buffer twice the size of the L1 cache
-    state->buffer = malloc((size_t) b);
+    state->buffer = malloc((size_t) bsize);
+    printf("buffer pointer addr %p\n", state->buffer);
 
     // Set some default state values.
     state->debug = false;
@@ -36,29 +35,24 @@ void init_state(struct state *state, int argc, char **argv)
     // These numbers may need to be tuned up to the specific machine in use
     // NOTE: Make sure that interval is the same in both sender and receiver
     state->interval = 160;
+    state->cache_region = 0x0;
     state->wait_cycles_between_measurements = 30;
-
-    // Construct the probing_set by taking the addresses that have cache set index 0
-    // There will be at least one of such addresses in our buffer.
-    for (int i = 0; i < 2 * n; i++) {
-        ADDR_PTR addr = (ADDR_PTR) (state->buffer + two_o_s * i);
-        if (get_cache_set_index(addr) == 0x0) {
-            append_string_to_linked_list(&state->probing_set, addr);
-        }
-    }
 
     // Parse the command line flags
     //      -d is used to enable the debug prints
     //      -i is used to specify a custom value for the time interval
     //      -w is used to specify a custom number of wait cycles between two probes
     int option;
-    while ((option = getopt(argc, argv, "di:w:")) != -1) {
+    while ((option = getopt(argc, argv, "di:w:r:")) != -1) {
         switch (option) {
             case 'd':
                 state->debug = true;
                 break;
             case 'i':
                 state->interval = atoi(optarg);
+                break;
+            case 'r':
+                state->cache_region = atoi(optarg);
                 break;
             case 'w':
                 state->wait_cycles_between_measurements = atoi(optarg);
@@ -70,6 +64,21 @@ void init_state(struct state *state, int argc, char **argv)
                 exit(1);
         }
     }
+    // Construct the probing_set by taking the addresses that have cache set index 0
+    // There will be at least one of such addresses in our buffer.
+    uint32_t probing_set_size = 0;
+    for (int i = 0; i < 8 * CACHE_WAYS_L1 * CACHE_SETS_L1; i++) {
+        ADDR_PTR addr = (ADDR_PTR) (state->buffer + CACHE_LINESIZE * i);
+        if (get_L1_cache_set_index(addr) == state->cache_region) {
+            append_string_to_linked_list(&state->probing_set, addr);
+            probing_set_size++;
+        }
+        // TODO: Maybe we want to restrict the probing set to CACHE_WAYS_L1
+        //  to aviod self eviction
+        //  if (size of state->probing_set >= CACHE_WAYS_L1) break;
+    }
+    printf("Found probing_set size of %u\n", probing_set_size);
+
 }
 
 /*
@@ -79,7 +88,7 @@ void init_state(struct state *state, int argc, char **argv)
  * If the the first_bit argument is true, relax the strict definition of "one" and try to
  * sync with the sender.
  */
-bool detect_bit(struct state *state, bool first_bit)
+bool detect_bit(const struct state *state, bool first_bit)
 {
     clock_t start_t, curr_t;
     start_t = clock();
@@ -193,6 +202,7 @@ int main(int argc, char **argv)
     bool current;
     bool previous = true;
 
+    printPID();
     printf("Press enter to begin listening ");
     getchar();
     while (1) {
