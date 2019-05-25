@@ -1,5 +1,6 @@
 #include "util.h"
 
+
 /*
  * Execution state of the program, with the variables
  * that we need to pass around the various functions.
@@ -19,17 +20,34 @@ struct state {
  */
 void init_state(struct state *state, int argc, char **argv)
 {
+    uint64_t pid = printPID();
     // The following calculations are based on the paper:
     //      C5: Cross-Cores Cache Covert Channel (dimva 2015)
     int L3_way_stride = ipow(2, LOG_CACHE_SETS_L3 + LOG_CACHE_LINESIZE);
-    int bsize = CACHE_WAYS_L3 * L3_way_stride;
+    int bsize = 4 * CACHE_WAYS_L3 * L3_way_stride;
 
     // Allocate a buffer of the size of the LLC
-    state->buffer = malloc((size_t) bsize);
-    // for (uint32_t i = 0; i < b; i += 64) {
-    //     *(state->buffer + i) = 0x5;
-    // }
+    // state->buffer = malloc((size_t) bsize);
+    char *buffer = MAP_FAILED;
+#ifdef HUGEPAGES
+    buffer = mmap(NULL, bsize, PROT_READ|PROT_WRITE, MAP_ANON|MAP_PRIVATE|HUGEPAGES, -1, 0);
+#endif
+
+    if (buffer == MAP_FAILED) {
+        fprintf(stderr, "allocating non-hugepages\n");
+        buffer = mmap(NULL, bsize, PROT_READ|PROT_WRITE, MAP_ANON|MAP_PRIVATE, -1, 0);
+    }
+    if (buffer == MAP_FAILED) {
+        fprintf(stderr, "Failed to allocate buffer!\n");
+        exit(-1);
+    }
+
+    state->buffer = buffer;
     printf("buffer pointer addr %p\n", state->buffer);
+    // Initialize the buffer to be be the non-zero page
+    for (uint32_t i = 0; i < bsize; i += 64) {
+        *(state->buffer + i) = pid;
+    }
 
     // Set some default state values.
     state->eviction_set = NULL;
@@ -38,8 +56,8 @@ void init_state(struct state *state, int argc, char **argv)
 
     // This number may need to be tuned up to the specific machine in use
     // NOTE: Make sure that interval is the same in both sender and receiver
-    state->interval = 160;
-    state->cache_region = 0x0;
+    state->interval = CHANNEL_DEFAULT_INTERVAL;
+    state->cache_region = CHANNEL_DEFAULT_REGION;
 
 
     // Parse the command line flags
@@ -74,11 +92,11 @@ void init_state(struct state *state, int argc, char **argv)
     //  one per line per cache set 0 of each slice (8 * 16).
     uint32_t eviction_set_size = 0;
     for (int set_index = 0; set_index < CACHE_SETS_L3; set_index++) {
-        for (int line_index = 0; line_index < CACHE_WAYS_L3; line_index++) {
+        for (int line_index = 0; line_index < 4 * CACHE_WAYS_L3; line_index++) {
 
             ADDR_PTR addr = (ADDR_PTR) (state->buffer + \
                     set_index * CACHE_LINESIZE + line_index * L3_way_stride);
-            if (get_cache_set_index(addr) == state->cache_region) {
+            if (get_L3_cache_set_index(addr) == state->cache_region) {
                 append_string_to_linked_list(&state->eviction_set, addr);
                 eviction_set_size++;
             }
@@ -104,7 +122,8 @@ void send_bit(bool one, const struct state *state)
             struct Node *current = state->eviction_set;
             while (current != NULL && (curr_t - start_t) < state->interval) {
                 ADDR_PTR addr = current->addr;
-                clflush(addr);
+                // clflush(addr);
+                uint64_t _tmp = *(uint64_t *)(addr);
 
                 curr_t = clock();
                 current = current->next;
@@ -124,7 +143,6 @@ int main(int argc, char **argv)
     init_state(&state, argc, argv);
     clock_t start_t, end_t;
     int sending = 1;
-    printPID();
     printf("Please type a message (exit to stop).\n");
     while (sending) {
 

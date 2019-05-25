@@ -9,7 +9,7 @@ struct state {
     struct Node *probing_set;
     int interval;
     uint64_t cache_region;
-    int wait_cycles_between_measurements;
+    int wait_period_between_measurements;
     bool debug;
 };
 
@@ -19,14 +19,32 @@ struct state {
  */
 void init_state(struct state *state, int argc, char **argv)
 {
+    uint64_t pid = printPID();
     // The following calculations are based on the paper:
     //      C5: Cross-Cores Cache Covert Channel (dimva 2015)
     int L1_way_stride = ipow(2, LOG_CACHE_SETS_L1 + LOG_CACHE_LINESIZE); // 4096
-    int bsize = 8 * CACHE_WAYS_L1 * L1_way_stride;
+    int bsize = 64 * CACHE_WAYS_L1 * L1_way_stride; // 64 * 8 * 4k = 2M
 
     // Allocate a buffer twice the size of the L1 cache
-    state->buffer = malloc((size_t) bsize);
+    char *buffer = MAP_FAILED;
+#ifdef HUGEPAGES
+    buffer = mmap(NULL, bsize, PROT_READ|PROT_WRITE, MAP_ANON|MAP_PRIVATE|HUGEPAGES, -1, 0);
+#endif
+
+    if (buffer == MAP_FAILED) {
+        fprintf(stderr, "allocating non-hugepages\n");
+        buffer = mmap(NULL, bsize, PROT_READ|PROT_WRITE, MAP_ANON|MAP_PRIVATE, -1, 0);
+    }
+    if (buffer == MAP_FAILED) {
+        fprintf(stderr, "Failed to allocate buffer!\n");
+        exit(-1);
+    }
+    state->buffer = buffer;
     printf("buffer pointer addr %p\n", state->buffer);
+    // Initialize the buffer to be be the non-zero page
+    for (uint32_t i = 0; i < bsize; i += 64) {
+        *(state->buffer + i) = pid;
+    }
 
     // Set some default state values.
     state->debug = false;
@@ -34,14 +52,14 @@ void init_state(struct state *state, int argc, char **argv)
 
     // These numbers may need to be tuned up to the specific machine in use
     // NOTE: Make sure that interval is the same in both sender and receiver
-    state->interval = 160;
-    state->cache_region = 0x0;
-    state->wait_cycles_between_measurements = 30;
+    state->interval = CHANNEL_DEFAULT_INTERVAL;
+    state->cache_region = CHANNEL_DEFAULT_REGION;
+    state->wait_period_between_measurements = CHANNEL_DEFAULT_WAIT_PERIOD;
 
     // Parse the command line flags
     //      -d is used to enable the debug prints
     //      -i is used to specify a custom value for the time interval
-    //      -w is used to specify a custom number of wait cycles between two probes
+    //      -w is used to specify a custom number of wait time between two probes
     int option;
     while ((option = getopt(argc, argv, "di:w:r:")) != -1) {
         switch (option) {
@@ -55,7 +73,7 @@ void init_state(struct state *state, int argc, char **argv)
                 state->cache_region = atoi(optarg);
                 break;
             case 'w':
-                state->wait_cycles_between_measurements = atoi(optarg);
+                state->wait_period_between_measurements = atoi(optarg);
                 break;
             case '?':
                 fprintf(stderr, "Unknown option character `\\x%x'.\n", optopt);
@@ -67,15 +85,14 @@ void init_state(struct state *state, int argc, char **argv)
     // Construct the probing_set by taking the addresses that have cache set index 0
     // There will be at least one of such addresses in our buffer.
     uint32_t probing_set_size = 0;
-    for (int i = 0; i < 8 * CACHE_WAYS_L1 * CACHE_SETS_L1; i++) {
+    for (int i = 0; i < 64 * CACHE_WAYS_L1 * CACHE_SETS_L1; i++) {
         ADDR_PTR addr = (ADDR_PTR) (state->buffer + CACHE_LINESIZE * i);
-        if (get_L1_cache_set_index(addr) == state->cache_region) {
+        if (get_L3_cache_set_index(addr) == state->cache_region) {
             append_string_to_linked_list(&state->probing_set, addr);
             probing_set_size++;
         }
-        // TODO: Maybe we want to restrict the probing set to CACHE_WAYS_L1
-        //  to aviod self eviction
-        //  if (size of state->probing_set >= CACHE_WAYS_L1) break;
+        // restrict the probing set to CACHE_WAYS_L1 to aviod self eviction
+        if (probing_set_size >= CACHE_WAYS_L1) break;
     }
     printf("Found probing_set size of %u\n", probing_set_size);
 
@@ -111,6 +128,8 @@ bool detect_bit(const struct state *state, bool first_bit)
             // When the access time is larger than 1000 cycles,
             // it is usually due to a disk miss. We exclude such misses
             // because they are not caused by clflush.
+            // if (time > misses_time_threshold && time < 1000)
+            //     printf("measure time %u\n", time);
             if (time < 1000) {
                 total_measurements++;
                 if (time > misses_time_threshold) {
@@ -124,7 +143,7 @@ bool detect_bit(const struct state *state, bool first_bit)
             current = current->next;
 
             // Busy loop to give time to the sender to flush the cache
-            for (int junk = 0; junk < state->wait_cycles_between_measurements &&
+            for (int junk = 0; junk < state->wait_period_between_measurements &&
                                (curr_t - start_t) < state->interval; junk++) {
                 curr_t = clock();
             }
@@ -202,7 +221,6 @@ int main(int argc, char **argv)
     bool current;
     bool previous = true;
 
-    printPID();
     printf("Press enter to begin listening ");
     getchar();
     while (1) {

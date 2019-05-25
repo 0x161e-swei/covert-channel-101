@@ -1,6 +1,5 @@
 
-// You may only use fgets() to pull input from stdin
-// You may use any print function to stdout to print
+// You may only use fgets() to pull input from stdin // You may use any print function to stdout to print
 // out chat messages
 //
 // You may use memory allocators and helper functions
@@ -15,9 +14,17 @@
 #include <inttypes.h>
 #include <time.h>
 #include <unistd.h>
+#include <sys/mman.h>
 
 #ifndef UTIL_H_
 #define UTIL_H_
+
+
+#ifdef MAP_HUGETLB
+#define HUGEPAGES MAP_HUGETLB
+#else
+#define HUGEPAGES 0
+#endif
 
 #define ADDR_PTR uint64_t
 #define CYCLES uint32_t
@@ -50,7 +57,7 @@ inline void clflush(ADDR_PTR addr) {
     asm volatile ("clflush (%0)"::"r"(addr));
 }
 
-void printPID();
+uint64_t printPID();
 
 int ipow(int base, int exp);
 
@@ -59,7 +66,9 @@ char *string_to_binary(char *s);
 char *conv_char(char *data, int size, char *msg);
 
 uint64_t get_cache_set_index(ADDR_PTR phys_addr);
-uint64_t get_L1_cache_set_index(ADDR_PTR phys_addr);
+uint64_t get_hugepage_cache_set_index(ADDR_PTR virt_addr);
+uint64_t get_L1_cache_set_index(ADDR_PTR virt_addr);
+uint64_t get_L3_cache_set_index(ADDR_PTR virt_addr);
 
 void append_string_to_linked_list(struct Node **head, ADDR_PTR addr);
 
@@ -74,23 +83,39 @@ void append_string_to_linked_list(struct Node **head, ADDR_PTR addr);
 
 
 // =======================================
-// Machine configuration
+// Machine Configuration
 // =======================================
+
+// Hugepage
+#define HUGEPAGE_BITS 21
+#define HUGEPAGE_SIZE (1 << HUGEPAGE_BITS)
+#define HUGEPAGE_MASK (HUGEPAGE_SIZE - 1)
 
 // Cache
 #define CACHE_LINESIZE      64
 #define LOG_CACHE_LINESIZE  6
 
 // L1
-#define CACHE_SETS_L1       64
 #define LOG_CACHE_SETS_L1   6
+#define CACHE_SETS_L1       64
+#define CACHE_SETS_L1_MASK  (CACHE_SETS_L1 - 1)
 #define CACHE_WAYS_L1       8
 
 // LLC
-#define CACHE_SETS_L3       8192
+
 #define LOG_CACHE_SETS_L3   13
+#define CACHE_SETS_L3       8192
+#define CACHE_SETS_L3_MASK  (CACHE_SETS_L3 - 1)
 #define CACHE_WAYS_L3       16
 #define CACHE_SLICES_L3     8
 
+// =======================================
+// Covert Channel Default Configuration
+// =======================================
+
+
+#define CHANNEL_DEFAULT_INTERVAL    160
+#define CHANNEL_DEFAULT_REGION      0x0
+#define CHANNEL_DEFAULT_WAIT_PERIOD 60
 
 #endif
