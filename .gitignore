@@ -1,6 +1,9 @@
 cmake-build-debug/
 CMakeLists.txt
 
+sender
+receiver
+
 # Created by https://www.gitignore.io/api/c,emacs
 
 ### C ###
