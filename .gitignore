@@ -3,6 +3,8 @@ CMakeLists.txt
 
 sender
 receiver
+sender_debug
+receiver_debug
 
 # Created by https://www.gitignore.io/api/c,emacs
 

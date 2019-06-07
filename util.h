@@ -1,9 +1,3 @@
-
-// You may only use fgets() to pull input from stdin // You may use any print function to stdout to print
-// out chat messages
-//
-// You may use memory allocators and helper functions
-// (e.g., rand()).  You may not use system().
 #include <stdio.h>
 #include <stdint.h>
 #include <stdbool.h>
@@ -19,6 +13,13 @@
 #ifndef UTIL_H_
 #define UTIL_H_
 
+#ifdef DEBUG
+#define debug(...) do{			\
+	fprintf(stdout, ##__VA_ARGS__); \
+} while(0)
+#else
+#define debug(...)
+#endif
 
 #ifdef MAP_HUGETLB
 #define HUGEPAGES MAP_HUGETLB
@@ -103,10 +104,10 @@ void append_string_to_linked_list(struct Node **head, ADDR_PTR addr);
 
 // LLC
 
-#define LOG_CACHE_SETS_L3   13
-#define CACHE_SETS_L3       8192
+#define LOG_CACHE_SETS_L3   15
+#define CACHE_SETS_L3       32768
 #define CACHE_SETS_L3_MASK  (CACHE_SETS_L3 - 1)
-#define CACHE_WAYS_L3       16
+#define CACHE_WAYS_L3       20
 #define CACHE_SLICES_L3     8
 
 // =======================================
@@ -114,8 +115,8 @@ void append_string_to_linked_list(struct Node **head, ADDR_PTR addr);
 // =======================================
 
 
-#define CHANNEL_DEFAULT_INTERVAL    160
+#define CHANNEL_DEFAULT_INTERVAL    200
 #define CHANNEL_DEFAULT_REGION      0x0
-#define CHANNEL_DEFAULT_WAIT_PERIOD 60
+#define CHANNEL_DEFAULT_WAIT_PERIOD 80
 
 #endif
