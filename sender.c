@@ -134,7 +134,7 @@ int main(int argc, char **argv)
 
         // Send a '10101011' byte to let the receiver detect that
         // I am about to send a start string and sync
-        for (int i = 0; i < 8; i++) {
+        for (int i = 0; i < 10; i++) {
             send_bit(i % 2 == 0, &state);
         }
         send_bit(true, &state);

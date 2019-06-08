@@ -124,10 +124,10 @@ void append_string_to_linked_list(struct Node **head, ADDR_PTR addr);
 
 // LLC
 
-#define LOG_CACHE_SETS_L3   15
-#define CACHE_SETS_L3       32768
+#define LOG_CACHE_SETS_L3   13
+#define CACHE_SETS_L3       8192 
 #define CACHE_SETS_L3_MASK  (CACHE_SETS_L3 - 1)
-#define CACHE_WAYS_L3       20
+#define CACHE_WAYS_L3       16 
 #define CACHE_SLICES_L3     8
 
 // =======================================
@@ -135,8 +135,8 @@ void append_string_to_linked_list(struct Node **head, ADDR_PTR addr);
 // =======================================
 
 
-#define CHANNEL_DEFAULT_INTERVAL    200
+#define CHANNEL_DEFAULT_INTERVAL    160
 #define CHANNEL_DEFAULT_REGION      0x0
-#define CHANNEL_DEFAULT_WAIT_PERIOD 80
+#define CHANNEL_DEFAULT_WAIT_PERIOD 60
 
 #endif
