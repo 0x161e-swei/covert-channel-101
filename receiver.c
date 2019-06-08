@@ -1,19 +1,6 @@
 #include "util.h"
 
 /*
- * Execution state of the program, with the variables
- * that we need to pass around the various functions.
- */
-struct state {
-    char *buffer;
-    struct Node *probing_set;
-    int interval;
-    uint64_t cache_region;
-    int wait_period_between_measurements;
-    bool debug;
-};
-
-/*
  * Parses the arguments and flags of the program and initializes the struct state
  * with those parameters (or the default ones if no custom flags are given).
  */
@@ -23,23 +10,11 @@ void init_state(struct state *state, int argc, char **argv)
     // The following calculations are based on the paper:
     //      C5: Cross-Cores Cache Covert Channel (dimva 2015)
     int L1_way_stride = ipow(2, LOG_CACHE_SETS_L1 + LOG_CACHE_LINESIZE); // 4096
-    int bsize = 64 * CACHE_WAYS_L1 * L1_way_stride; // 64 * 8 * 4k = 2M
+    uint64_t bsize = 256 * CACHE_WAYS_L1 * L1_way_stride; // 64 * 8 * 4k = 2M
 
     // Allocate a buffer twice the size of the L1 cache
-    char *buffer = MAP_FAILED;
-#ifdef HUGEPAGES
-    buffer = mmap(NULL, bsize, PROT_READ|PROT_WRITE, MAP_ANON|MAP_PRIVATE|HUGEPAGES, -1, 0);
-#endif
+    state->buffer = allocateBuffer(bsize);
 
-    if (buffer == MAP_FAILED) {
-        fprintf(stderr, "allocating non-hugepages\n");
-        buffer = mmap(NULL, bsize, PROT_READ|PROT_WRITE, MAP_ANON|MAP_PRIVATE, -1, 0);
-    }
-    if (buffer == MAP_FAILED) {
-        fprintf(stderr, "Failed to allocate buffer!\n");
-        exit(-1);
-    }
-    state->buffer = buffer;
     printf("buffer pointer addr %p\n", state->buffer);
     // Initialize the buffer to be be the non-zero page
     for (uint32_t i = 0; i < bsize; i += 64) {
@@ -47,8 +22,7 @@ void init_state(struct state *state, int argc, char **argv)
     }
 
     // Set some default state values.
-    state->debug = false;
-    state->probing_set = NULL;
+    state->addr_set = NULL;
 
     // These numbers may need to be tuned up to the specific machine in use
     // NOTE: Make sure that interval is the same in both sender and receiver
@@ -63,9 +37,6 @@ void init_state(struct state *state, int argc, char **argv)
     int option;
     while ((option = getopt(argc, argv, "di:w:r:")) != -1) {
         switch (option) {
-            case 'd':
-                state->debug = true;
-                break;
             case 'i':
                 state->interval = atoi(optarg);
                 break;
@@ -82,19 +53,19 @@ void init_state(struct state *state, int argc, char **argv)
                 exit(1);
         }
     }
-    // Construct the probing_set by taking the addresses that have cache set index 0
+    // Construct the addr_set by taking the addresses that have cache set index 0
     // There will be at least one of such addresses in our buffer.
-    uint32_t probing_set_size = 0;
-    for (int i = 0; i < 64 * CACHE_WAYS_L1 * CACHE_SETS_L1; i++) {
+    uint32_t addr_set_size = 0;
+    for (int i = 0; i < 256 * CACHE_WAYS_L1 * CACHE_SETS_L1; i++) {
         ADDR_PTR addr = (ADDR_PTR) (state->buffer + CACHE_LINESIZE * i);
         if (get_L3_cache_set_index(addr) == state->cache_region) {
-            append_string_to_linked_list(&state->probing_set, addr);
-            probing_set_size++;
+            append_string_to_linked_list(&state->addr_set, addr);
+            addr_set_size++;
         }
         // restrict the probing set to CACHE_WAYS_L1 to aviod self eviction
-        if (probing_set_size >= CACHE_WAYS_L1) break;
+        if (addr_set_size >= CACHE_WAYS_L1 / 2) break;
     }
-    printf("Found probing_set size of %u\n", probing_set_size);
+    printf("Found addr_set size of %u\n", addr_set_size);
 
 }
 
@@ -120,7 +91,7 @@ bool detect_bit(const struct state *state, bool first_bit)
     int misses_time_threshold = 150;
 
     while ((curr_t - start_t) < state->interval) {
-        struct Node *current = state->probing_set;
+        struct Node *current = state->addr_set;
         while (current != NULL && (curr_t - start_t) < state->interval) {
             ADDR_PTR addr = current->addr;
             CYCLES time = measure_one_block_access_time(addr);
@@ -128,8 +99,8 @@ bool detect_bit(const struct state *state, bool first_bit)
             // When the access time is larger than 1000 cycles,
             // it is usually due to a disk miss. We exclude such misses
             // because they are not caused by clflush.
-            // if (time > misses_time_threshold && time < 1000)
-            //     printf("measure time %u\n", time);
+            if (time > misses_time_threshold && time < 1000)
+                debug("measure time %u\n", time);
             if (time < 1000) {
                 total_measurements++;
                 if (time > misses_time_threshold) {
@@ -188,9 +159,7 @@ bool detect_bit(const struct state *state, bool first_bit)
         // one between the dot '.' and the '|' that precedes it in the drawing.
         double waiting_time = state->interval * ratio;
         while (clock() - start_t < waiting_time) {}
-        if (state->debug) {
-            printf("\n[Synchronized forward of %.2f]\n", ratio);
-        }
+        debug("\n[Synchronized forward of %.2f]\n", ratio);
     }
 
     // If first_bit is true, use the relaxed threshold of misses to identify a 1.
@@ -199,9 +168,7 @@ bool detect_bit(const struct state *state, bool first_bit)
     bool ret = ((first_bit && misses > miss_threshold) ||
                 (!first_bit && misses > (float) total_measurements / 2.0));
 
-    if (state->debug) {
-        printf("Misses: %d out of %d --> %d\n", misses, total_measurements, ret);
-    }
+    debug("Misses: %d out of %d --> %d\n", misses, total_measurements, ret);
 
     return ret;
 }
@@ -250,9 +217,7 @@ int main(int argc, char **argv)
         // Finally, when a NULL byte is received the receiver exits the
         // message receiving mode and restarts from the base state.
         if (flip_sequence == 0 && current == 1 && previous == 1) {
-            if (state.debug) {
-                printf("Start sequence fully detected.\n\n");
-            }
+            debug("Start sequence fully detected.\n\n");
 
             int binary_msg_len = 0;
             int strike_zeros = 0;
@@ -266,19 +231,14 @@ int main(int argc, char **argv)
                 } else {
                     msg_ch[i] = '0';
                     if (++strike_zeros >= 8 && i % 8 == 0) {
-                        if (state.debug) {
-                            printf("String finished\n");
-                        }
-
+                        debug("String finished\n");
                         break;
                     }
                 }
             }
 
             msg_ch[binary_msg_len - 8] = '\0';
-            if (state.debug) {
-                printf("Binary string received %s\n", msg_ch);
-            }
+            debug("Binary string received %s\n", msg_ch);
 
             int ascii_msg_len = binary_msg_len / 8;
             char msg[ascii_msg_len];

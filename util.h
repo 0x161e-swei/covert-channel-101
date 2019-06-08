@@ -30,9 +30,28 @@
 #define ADDR_PTR uint64_t
 #define CYCLES uint32_t
 
+typedef enum _channel {
+    PrimeProbe,
+    FlushReload
+} Channel;
+
 struct Node {
     ADDR_PTR addr;
     struct Node *next;
+};
+
+/*
+ * Execution state of the program, with the variables
+ * that we need to pass around the various functions.
+ */
+struct state {
+    char *buffer;
+    struct Node *addr_set;
+    int interval;
+    uint64_t cache_region;
+    bool benchmark_mode; // sender only
+    int wait_period_between_measurements; // receiver only
+    Channel channel;
 };
 
 inline CYCLES measure_one_block_access_time(ADDR_PTR addr)
@@ -70,6 +89,7 @@ uint64_t get_cache_set_index(ADDR_PTR phys_addr);
 uint64_t get_hugepage_cache_set_index(ADDR_PTR virt_addr);
 uint64_t get_L1_cache_set_index(ADDR_PTR virt_addr);
 uint64_t get_L3_cache_set_index(ADDR_PTR virt_addr);
+void *allocateBuffer(uint64_t size);
 
 void append_string_to_linked_list(struct Node **head, ADDR_PTR addr);
 

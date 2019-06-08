@@ -1,19 +1,5 @@
 #include "util.h"
 
-
-/*
- * Execution state of the program, with the variables
- * that we need to pass around the various functions.
- */
-struct state {
-    char *buffer;
-    struct Node *eviction_set;
-    int interval;
-    uint64_t cache_region;
-    bool debug;
-    bool benchmark_mode;
-};
-
 /*
  * Parses the arguments and flags of the program and initializes the struct state
  * with those parameters (or the default ones if no custom flags are given).
@@ -24,34 +10,19 @@ void init_state(struct state *state, int argc, char **argv)
     // The following calculations are based on the paper:
     //      C5: Cross-Cores Cache Covert Channel (dimva 2015)
     int L3_way_stride = ipow(2, LOG_CACHE_SETS_L3 + LOG_CACHE_LINESIZE);
-    int bsize = 4 * CACHE_WAYS_L3 * L3_way_stride;
+    uint64_t bsize = 4 * CACHE_WAYS_L3 * L3_way_stride;
 
     // Allocate a buffer of the size of the LLC
     // state->buffer = malloc((size_t) bsize);
-    char *buffer = MAP_FAILED;
-#ifdef HUGEPAGES
-    buffer = mmap(NULL, bsize, PROT_READ|PROT_WRITE, MAP_ANON|MAP_PRIVATE|HUGEPAGES, -1, 0);
-#endif
+    state->buffer = allocateBuffer(bsize);
 
-    if (buffer == MAP_FAILED) {
-        fprintf(stderr, "allocating non-hugepages\n");
-        buffer = mmap(NULL, bsize, PROT_READ|PROT_WRITE, MAP_ANON|MAP_PRIVATE, -1, 0);
-    }
-    if (buffer == MAP_FAILED) {
-        fprintf(stderr, "Failed to allocate buffer!\n");
-        exit(-1);
-    }
-
-    state->buffer = buffer;
-    printf("buffer pointer addr %p\n", state->buffer);
     // Initialize the buffer to be be the non-zero page
     for (uint32_t i = 0; i < bsize; i += 64) {
         *(state->buffer + i) = pid;
     }
 
     // Set some default state values.
-    state->eviction_set = NULL;
-    state->debug = false;
+    state->addr_set = NULL;
     state->benchmark_mode = false;
 
     // This number may need to be tuned up to the specific machine in use
@@ -67,9 +38,6 @@ void init_state(struct state *state, int argc, char **argv)
     int option;
     while ((option = getopt(argc, argv, "di:w:br:")) != -1) {
         switch (option) {
-            case 'd':
-                state->debug = true;
-                break;
             case 'b':
                 state->benchmark_mode = true;
                 break;
@@ -87,26 +55,26 @@ void init_state(struct state *state, int argc, char **argv)
         }
     }
 
-    // Construct the eviction_set by taking the addresses that have cache set index 0
+    // Construct the addr_set by taking the addresses that have cache set index 0
     // There should be 128 such addresses in our buffer:
     //  one per line per cache set 0 of each slice (8 * 16).
-    uint32_t eviction_set_size = 0;
+    uint32_t addr_set_size = 0;
     for (int set_index = 0; set_index < CACHE_SETS_L3; set_index++) {
         for (int line_index = 0; line_index < 4 * CACHE_WAYS_L3; line_index++) {
 
             ADDR_PTR addr = (ADDR_PTR) (state->buffer + \
                     set_index * CACHE_LINESIZE + line_index * L3_way_stride);
             if (get_L3_cache_set_index(addr) == state->cache_region) {
-                append_string_to_linked_list(&state->eviction_set, addr);
-                eviction_set_size++;
+                append_string_to_linked_list(&state->addr_set, addr);
+                addr_set_size++;
             }
         }
     }
-    printf("Found eviction_set size of %u\n", eviction_set_size);
+    printf("Found addr_set size of %u\n", addr_set_size);
 }
 
 /*
- * Sends a bit to the receiver by repeatedly flushing the addresses of the eviction_set
+ * Sends a bit to the receiver by repeatedly flushing the addresses of the addr_set
  * for the clock length of state->interval when we are sending a one, or by doing nothing
  * for the clock length of state->interval when we are sending a zero.
  */
@@ -119,7 +87,7 @@ void send_bit(bool one, const struct state *state)
 
     if (one) {
         while ((curr_t - start_t) < state->interval) {
-            struct Node *current = state->eviction_set;
+            struct Node *current = state->addr_set;
             while (current != NULL && (curr_t - start_t) < state->interval) {
                 ADDR_PTR addr = current->addr;
                 // clflush(addr);
@@ -157,9 +125,7 @@ int main(int argc, char **argv)
 
         // Convert that message to binary
         char *msg = string_to_binary(text_buf);
-        if (state.debug) {
-            printf("%s\n", msg);
-        }
+        debug("%s\n", msg);
 
         // If we are in benchmark mode, start measuring the time
         if (state.benchmark_mode) {
@@ -168,7 +134,7 @@ int main(int argc, char **argv)
 
         // Send a '10101011' byte to let the receiver detect that
         // I am about to send a start string and sync
-        for (int i = 0; i < 6; i++) {
+        for (int i = 0; i < 8; i++) {
             send_bit(i % 2 == 0, &state);
         }
         send_bit(true, &state);

@@ -55,6 +55,27 @@ uint64_t get_cache_set_index(ADDR_PTR phys_addr)
     return (phys_addr & mask) >> LOG_CACHE_LINESIZE;
 }
 
+/*
+ * Allocate a buffer of the size as passed-in
+ * returns the pointer to the buffer
+ */
+void *allocateBuffer(uint64_t size) {
+    void *buffer = MAP_FAILED;
+#ifdef HUGEPAGES
+    buffer = mmap(NULL, size, PROT_READ|PROT_WRITE, MAP_ANON|MAP_PRIVATE|HUGEPAGES, -1, 0);
+#endif
+
+    if (buffer == MAP_FAILED) {
+        fprintf(stderr, "allocating non-hugepages\n");
+        buffer = mmap(NULL, size, PROT_READ|PROT_WRITE, MAP_ANON|MAP_PRIVATE, -1, 0);
+    }
+    if (buffer == MAP_FAILED) {
+        fprintf(stderr, "Failed to allocate buffer!\n");
+        exit(-1);
+    }
+
+    return buffer;
+}
 
 /*
  * Convert a given ASCII string to a binary string.
