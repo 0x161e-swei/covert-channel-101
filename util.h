@@ -47,10 +47,12 @@ struct Node {
 struct state {
     char *buffer;
     struct Node *addr_set;
-    int interval;
     uint64_t cache_region;
-    bool benchmark_mode; // sender only
-    int wait_period_between_measurements; // receiver only
+    uint64_t interval;
+    uint64_t prime_period;
+    uint64_t access_period;
+    uint64_t probe_period;
+    bool benchmark_mode;        // sender only
     Channel channel;
 };
 
@@ -137,6 +139,6 @@ void append_string_to_linked_list(struct Node **head, ADDR_PTR addr);
 
 #define CHANNEL_DEFAULT_INTERVAL    160
 #define CHANNEL_DEFAULT_REGION      0x0
-#define CHANNEL_DEFAULT_WAIT_PERIOD 60
+#define CHANNEL_DEFAULT_ACCESS_PERIOD 60
 
 #endif

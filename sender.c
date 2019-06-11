@@ -27,8 +27,10 @@ void init_state(struct state *state, int argc, char **argv)
 
     // This number may need to be tuned up to the specific machine in use
     // NOTE: Make sure that interval is the same in both sender and receiver
-    state->interval = CHANNEL_DEFAULT_INTERVAL;
     state->cache_region = CHANNEL_DEFAULT_REGION;
+    state->interval = CHANNEL_DEFAULT_INTERVAL;
+    state->access_period = CHANNEL_DEFAULT_ACCESS_PERIOD;
+    state->prime_period = 0; // default is half of (interval - access_period)
 
 
     // Parse the command line flags
@@ -36,7 +38,7 @@ void init_state(struct state *state, int argc, char **argv)
     //      -b is used to enable the benchmark mode (to measure the sending bitrate)
     //      -i is used to specify a custom value for the time interval
     int option;
-    while ((option = getopt(argc, argv, "di:w:br:")) != -1) {
+    while ((option = getopt(argc, argv, "di:a:br:")) != -1) {
         switch (option) {
             case 'b':
                 state->benchmark_mode = true;
@@ -47,12 +49,23 @@ void init_state(struct state *state, int argc, char **argv)
             case 'r':
                 state->cache_region = atoi(optarg);
                 break;
+            case 'a':
+                state->access_period = atoi(optarg);
+                break;
             case '?':
                 fprintf(stderr, "Unknown option character `\\x%x'.\n", optopt);
                 exit(1);
             default:
                 exit(1);
         }
+    }
+
+    if (state->prime_period == 0) {
+        state->prime_period = (state->interval - state->access_period) / 2;
+        state->probe_period = (state->interval - state->access_period) / 2;
+    }
+    else {
+        state->probe_period = (state->interval - state->prime_period - state->access_period);
     }
 
     // Construct the addr_set by taking the addresses that have cache set index 0
@@ -86,16 +99,25 @@ void send_bit(bool one, const struct state *state)
     curr_t = start_t;
 
     if (one) {
-        while ((curr_t - start_t) < state->interval) {
+        if ((curr_t - start_t) < state->interval) {
             struct Node *current = state->addr_set;
-            while (current != NULL && (curr_t - start_t) < state->interval) {
-                ADDR_PTR addr = current->addr;
-                // clflush(addr);
-                uint64_t _tmp = *(uint64_t *)(addr);
+            // wait for receiver to prime the cache set
+            while (clock() - start_t < state->prime_period) {}
 
-                curr_t = clock();
-                current = current->next;
-            }
+            // access
+            uint64_t stopTime = start_t + state->prime_period + state->access_period;
+            do {
+                while(current != NULL) {
+                    ADDR_PTR addr = current->addr;
+                    // clflush(addr);
+                    *(uint8_t *)(addr);
+                    current = current->next;
+                }
+            } while (clock() < stopTime);
+
+            // wait for receiver to probe
+            while (clock() < state->interval) {}
+
         }
 
     } else {
@@ -134,7 +156,7 @@ int main(int argc, char **argv)
 
         // Send a '10101011' byte to let the receiver detect that
         // I am about to send a start string and sync
-        for (int i = 0; i < 10; i++) {
+        for (int i = 0; i < 8; i++) {
             send_bit(i % 2 == 0, &state);
         }
         send_bit(true, &state);

@@ -26,16 +26,17 @@ void init_state(struct state *state, int argc, char **argv)
 
     // These numbers may need to be tuned up to the specific machine in use
     // NOTE: Make sure that interval is the same in both sender and receiver
-    state->interval = CHANNEL_DEFAULT_INTERVAL;
     state->cache_region = CHANNEL_DEFAULT_REGION;
-    state->wait_period_between_measurements = CHANNEL_DEFAULT_WAIT_PERIOD;
+    state->interval = CHANNEL_DEFAULT_INTERVAL;
+    state->access_period = CHANNEL_DEFAULT_ACCESS_PERIOD;
+    state->prime_period = 0; // default is half of (interval - access_period)
 
     // Parse the command line flags
     //      -d is used to enable the debug prints
     //      -i is used to specify a custom value for the time interval
     //      -w is used to specify a custom number of wait time between two probes
     int option;
-    while ((option = getopt(argc, argv, "di:w:r:")) != -1) {
+    while ((option = getopt(argc, argv, "di:a:r:")) != -1) {
         switch (option) {
             case 'i':
                 state->interval = atoi(optarg);
@@ -43,8 +44,8 @@ void init_state(struct state *state, int argc, char **argv)
             case 'r':
                 state->cache_region = atoi(optarg);
                 break;
-            case 'w':
-                state->wait_period_between_measurements = atoi(optarg);
+            case 'a':
+                state->access_period = atoi(optarg);
                 break;
             case '?':
                 fprintf(stderr, "Unknown option character `\\x%x'.\n", optopt);
@@ -53,6 +54,16 @@ void init_state(struct state *state, int argc, char **argv)
                 exit(1);
         }
     }
+
+    if (state->prime_period == 0) {
+        state->prime_period = (state->interval - state->access_period) / 2;
+        state->probe_period = (state->interval - state->access_period) / 2;
+    }
+    else {
+        state->probe_period = (state->interval - state->prime_period - state->access_period);
+    }
+    // debug("prime %u access %u probe %u\n", state->prime_period, state->access_period, state->probe_period);
+
     // Construct the addr_set by taking the addresses that have cache set index 0
     // There will be at least one of such addresses in our buffer.
     uint32_t addr_set_size = 0;
@@ -65,6 +76,7 @@ void init_state(struct state *state, int argc, char **argv)
         // restrict the probing set to CACHE_WAYS_L1 to aviod self eviction
         if (addr_set_size >= CACHE_WAYS_L1 / 2) break;
     }
+
     printf("Found addr_set size of %u\n", addr_set_size);
 
 }
@@ -89,16 +101,35 @@ bool detect_bit(const struct state *state, bool first_bit)
     // This is high because the misses caused by clflush
     // usually cause an access time larger than 150 cycles
     int misses_time_threshold = 150;
+    struct Node *current = state->addr_set;
 
-    while ((curr_t - start_t) < state->interval) {
-        struct Node *current = state->addr_set;
-        while (current != NULL && (curr_t - start_t) < state->interval) {
+    if ((curr_t - start_t) < state->interval) {
+        // prime
+        do {
+            while (current != NULL && current->next != NULL) {
+                ADDR_PTR addr1 = current->addr;
+                ADDR_PTR addr2 = current->next->addr;
+                *(uint8_t *)(addr1);
+                *(uint8_t *)(addr2);
+                *(uint8_t *)(addr1);
+                *(uint8_t *)(addr2);
+                current = current->next;
+            }
+        } while ((clock() - start_t) < state->prime_period);
+
+        // wait for sender to access
+        while (clock() - start_t < (state->prime_period + state->access_period)) {}
+
+        // probe
+        current = state->addr_set;
+        while (current != NULL && (clock() - start_t) < state->interval) {
             ADDR_PTR addr = current->addr;
             CYCLES time = measure_one_block_access_time(addr);
 
             // When the access time is larger than 1000 cycles,
-            // it is usually due to a disk miss. We exclude such misses
-            // because they are not caused by clflush.
+            // it is usually due to a long-latency page walk.
+            // We exclude such misses
+            // because they are not caused by accesses from the sender.
             if (time > misses_time_threshold && time < 1000)
                 debug("measure time %u\n", time);
             if (time < 1000) {
@@ -110,14 +141,13 @@ bool detect_bit(const struct state *state, bool first_bit)
                 }
             }
 
-            curr_t = clock();
             current = current->next;
 
             // Busy loop to give time to the sender to flush the cache
-            for (int junk = 0; junk < state->wait_period_between_measurements &&
-                               (curr_t - start_t) < state->interval; junk++) {
-                curr_t = clock();
-            }
+            // for (int junk = 0; junk < state->wait_period_between_measurements &&
+            //                    (curr_t - start_t) < state->interval; junk++) {
+            //     curr_t = clock();
+            // }
         }
     }
 
