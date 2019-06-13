@@ -79,6 +79,16 @@ inline void clflush(ADDR_PTR addr) {
     asm volatile ("clflush (%0)"::"r"(addr));
 }
 
+static inline uint64_t rdtsc() {
+    uint64_t a, d;
+    asm volatile ("lfence");
+    asm volatile ("rdtsc" : "=a" (a), "=d" (d));
+    asm volatile ("lfence");
+    return (d << 32) | a;
+}
+
+uint64_t getTime();
+
 uint64_t printPID();
 
 int ipow(int base, int exp);
@@ -104,6 +114,10 @@ void append_string_to_linked_list(struct Node **head, ADDR_PTR addr);
 // static const int CACHE_WAYS_L3 = 16;
 // static const int CACHE_SLICES_L3 = 8;
 
+#define __rdtsc() ({ uint64_t __tmp;                             \
+                    __asm__ __volatile__ ("mrs %0, pmccntr_el0  " : "=r"(__tmp)); \
+                    __tmp; })
+
 
 // =======================================
 // Machine Configuration
@@ -127,9 +141,9 @@ void append_string_to_linked_list(struct Node **head, ADDR_PTR addr);
 // LLC
 
 #define LOG_CACHE_SETS_L3   13
-#define CACHE_SETS_L3       8192 
+#define CACHE_SETS_L3       8192
 #define CACHE_SETS_L3_MASK  (CACHE_SETS_L3 - 1)
-#define CACHE_WAYS_L3       16 
+#define CACHE_WAYS_L3       16
 #define CACHE_SLICES_L3     8
 
 // =======================================
@@ -137,8 +151,8 @@ void append_string_to_linked_list(struct Node **head, ADDR_PTR addr);
 // =======================================
 
 
-#define CHANNEL_DEFAULT_INTERVAL    160
+#define CHANNEL_DEFAULT_INTERVAL    0x400000
 #define CHANNEL_DEFAULT_REGION      0x0
-#define CHANNEL_DEFAULT_ACCESS_PERIOD 60
+#define CHANNEL_DEFAULT_ACCESS_PERIOD 0x200000
 
 #endif

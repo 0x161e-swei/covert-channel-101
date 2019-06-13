@@ -2,7 +2,7 @@
 #include "util.h"
 
 /* Measure the time it takes to access a block with virtual address addr. */
-extern CYCLES measure_one_block_access_time(ADDR_PTR addr);
+extern inline CYCLES measure_one_block_access_time(ADDR_PTR addr);
 
 /*
  * CLFlushes the given address.
@@ -156,5 +156,10 @@ uint64_t printPID() {
     uint64_t pid = getpid();
     printf("Process ID: %lu\n", pid);
     return pid;
+}
+
+uint64_t getTime() {
+    // can be a choice of channel?
+    return rdtsc();
 }
 

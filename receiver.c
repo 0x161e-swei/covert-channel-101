@@ -74,7 +74,7 @@ void init_state(struct state *state, int argc, char **argv)
             addr_set_size++;
         }
         // restrict the probing set to CACHE_WAYS_L1 to aviod self eviction
-        if (addr_set_size >= CACHE_WAYS_L1 / 2) break;
+        if (addr_set_size >= CACHE_WAYS_L1) break;
     }
 
     printf("Found addr_set size of %u\n", addr_set_size);
@@ -90,39 +90,42 @@ void init_state(struct state *state, int argc, char **argv)
  */
 bool detect_bit(const struct state *state, bool first_bit)
 {
-    clock_t start_t, curr_t;
-    start_t = clock();
+    uint64_t start_t, curr_t;
+
+    start_t = getTime();
     curr_t = start_t;
 
     int misses = 0;
     int hits = 0;
     int total_measurements = 0;
 
-    // This is high because the misses caused by clflush
-    // usually cause an access time larger than 150 cycles
-    int misses_time_threshold = 150;
-    struct Node *current = state->addr_set;
+    // miss in L3
+    int misses_time_threshold = 200;
+    struct Node *current = NULL;
 
-    if ((curr_t - start_t) < state->interval) {
+    if ((getTime() - start_t) < state->interval) {
         // prime
+        uint64_t prime_count = 0;
         do {
+            current = state->addr_set;
             while (current != NULL && current->next != NULL) {
-                ADDR_PTR addr1 = current->addr;
-                ADDR_PTR addr2 = current->next->addr;
-                *(uint8_t *)(addr1);
-                *(uint8_t *)(addr2);
-                *(uint8_t *)(addr1);
-                *(uint8_t *)(addr2);
+                volatile uint64_t* addr1 = (uint64_t*) current->addr;
+                volatile uint64_t* addr2 = (uint64_t*) current->next->addr;
+                *addr1;
+                *addr2;
+                *addr1;
+                *addr2;
                 current = current->next;
+                prime_count++;
             }
-        } while ((clock() - start_t) < state->prime_period);
+        } while ((getTime() - start_t) < state->prime_period);
 
         // wait for sender to access
-        while (clock() - start_t < (state->prime_period + state->access_period)) {}
+        while (getTime() - start_t < (state->prime_period + state->access_period)) {}
 
         // probe
         current = state->addr_set;
-        while (current != NULL && (clock() - start_t) < state->interval) {
+        while (current != NULL && (getTime() - start_t) < state->interval) {
             ADDR_PTR addr = current->addr;
             CYCLES time = measure_one_block_access_time(addr);
 
@@ -130,77 +133,21 @@ bool detect_bit(const struct state *state, bool first_bit)
             // it is usually due to a long-latency page walk.
             // We exclude such misses
             // because they are not caused by accesses from the sender.
-            if (time > misses_time_threshold && time < 1000)
-                debug("measure time %u\n", time);
-            if (time < 1000) {
-                total_measurements++;
-                if (time > misses_time_threshold) {
-                    misses++;
-                } else {
-                    hits++;
-                }
-            }
+            total_measurements += time < 600;
+            misses  += (time < 600) && (time > misses_time_threshold);
+            hits    += (time < 600) && (time <= misses_time_threshold);
 
             current = current->next;
-
-            // Busy loop to give time to the sender to flush the cache
-            // for (int junk = 0; junk < state->wait_period_between_measurements &&
-            //                    (curr_t - start_t) < state->interval; junk++) {
-            //     curr_t = clock();
-            // }
         }
+
+        while (getTime() - start_t < state->interval) {}
     }
 
-    // This is what allows the receiver to synchronize with the sender.
-    // It only happens if the first_bit flag is true.
-    //
-    // We start by computing a relaxed miss_threshold.
-    // Heuristically, this is about 13% of the measurements.
-    double miss_threshold = (float) total_measurements / 8.0;
-
-    // Then, if the number of misses is higher than this miss_threshold
-    if (first_bit && misses > miss_threshold) {
-        start_t = clock();
-
-        // We compute the number of misses that we instead would expect
-        // to count when the sender is flushing.
-        // Heuristically, this is about 83% of the measurements.
-        double expected_for_a_one = (float) total_measurements / 1.2;
-
-        // Then we compute of what fraction of 1 interval we are
-        // out of sync compared to the sender
-        double ratio = (1 - misses / expected_for_a_one);
-
-        // Finally, we wait for that fraction of interval so that we
-        // know that we will be synced at the start of the next interval.
-        //
-        // This is easier to understand on a whiteboard, but here is a
-        // drawing attempt:
-        //
-        // Sender clock:
-        //     |           |           |           |
-        //
-        // Receiver clock:
-        // |           |   .       |   |           |
-        //                   ⌙ here the receiver is out of sync
-        //
-        // However, he can count the ratio of misses got versus misses expected,
-        // and then wait at the end of the cycle for an amount of time equal to the
-        // one between the dot '.' and the '|' that precedes it in the drawing.
-        double waiting_time = state->interval * ratio;
-        while (clock() - start_t < waiting_time) {}
-        debug("\n[Synchronized forward of %.2f]\n", ratio);
+    if (misses != 0) {
+        debug("Misses: %d out of %d \n", misses, total_measurements);
     }
 
-    // If first_bit is true, use the relaxed threshold of misses to identify a 1.
-    // Otherwise, consider a one only when number of misses is more than half of the
-    // total measurements.
-    bool ret = ((first_bit && misses > miss_threshold) ||
-                (!first_bit && misses > (float) total_measurements / 2.0));
-
-    debug("Misses: %d out of %d --> %d\n", misses, total_measurements, ret);
-
-    return ret;
+    return (misses > (float) total_measurements / 2)? 1: 0;
 }
 
 // This is the only hardcoded variable which defines the max size of a message
@@ -221,6 +168,9 @@ int main(int argc, char **argv)
     printf("Press enter to begin listening ");
     getchar();
     while (1) {
+
+        // sync on clock edge
+        while((getTime() & 0x003fffff) > 20000) {}
         current = detect_bit(&state, first_time);
 
         // This receiving loop is a sort of finite state machine.

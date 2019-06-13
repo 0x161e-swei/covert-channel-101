@@ -10,11 +10,12 @@ void init_state(struct state *state, int argc, char **argv)
     // The following calculations are based on the paper:
     //      C5: Cross-Cores Cache Covert Channel (dimva 2015)
     int L3_way_stride = ipow(2, LOG_CACHE_SETS_L3 + LOG_CACHE_LINESIZE);
-    uint64_t bsize = 4 * CACHE_WAYS_L3 * L3_way_stride;
+    uint64_t bsize = 64 * CACHE_WAYS_L3 * L3_way_stride;
 
     // Allocate a buffer of the size of the LLC
     // state->buffer = malloc((size_t) bsize);
     state->buffer = allocateBuffer(bsize);
+    printf("buffer pointer addr %p\n", state->buffer);
 
     // Initialize the buffer to be be the non-zero page
     for (uint32_t i = 0; i < bsize; i += 64) {
@@ -73,7 +74,7 @@ void init_state(struct state *state, int argc, char **argv)
     //  one per line per cache set 0 of each slice (8 * 16).
     uint32_t addr_set_size = 0;
     for (int set_index = 0; set_index < CACHE_SETS_L3; set_index++) {
-        for (int line_index = 0; line_index < 4 * CACHE_WAYS_L3; line_index++) {
+        for (int line_index = 0; line_index < 64 * CACHE_WAYS_L3; line_index++) {
 
             ADDR_PTR addr = (ADDR_PTR) (state->buffer + \
                     set_index * CACHE_LINESIZE + line_index * L3_way_stride);
@@ -84,6 +85,7 @@ void init_state(struct state *state, int argc, char **argv)
         }
     }
     printf("Found addr_set size of %u\n", addr_set_size);
+
 }
 
 /*
@@ -93,36 +95,43 @@ void init_state(struct state *state, int argc, char **argv)
  */
 void send_bit(bool one, const struct state *state)
 {
-    clock_t start_t, curr_t;
+    uint64_t start_t, curr_t;
 
-    start_t = clock();
+    start_t = getTime();
     curr_t = start_t;
 
     if (one) {
         if ((curr_t - start_t) < state->interval) {
-            struct Node *current = state->addr_set;
             // wait for receiver to prime the cache set
-            while (clock() - start_t < state->prime_period) {}
+            // while (getTime() - start_t < state->prime_period) {}
 
             // access
-            uint64_t stopTime = start_t + state->prime_period + state->access_period;
+            struct Node *current = NULL;
+            // uint64_t stopTime = start_t + state->prime_period + state->access_period;
+            uint64_t stopTime = start_t + state->interval;
             do {
-                while(current != NULL) {
-                    ADDR_PTR addr = current->addr;
-                    // clflush(addr);
-                    *(uint8_t *)(addr);
+                current = state->addr_set;
+                while (current != NULL && current->next != NULL && getTime() < stopTime) {
+                // while (current != NULL && getTime() < stopTime) {
+                    volatile uint64_t* addr1 = (uint64_t*) current->addr;
+                    volatile uint8_t* addr2 = (uint8_t*) current->next->addr;
+                    *addr1;
+                    *addr2;
+                    *addr1;
+                    *addr2;
+                    *addr1;
+                    *addr2;
                     current = current->next;
                 }
-            } while (clock() < stopTime);
+            } while (getTime() < stopTime);
 
             // wait for receiver to probe
-            while (clock() < state->interval) {}
+            while (getTime() < state->interval) {}
 
         }
 
     } else {
-        start_t = clock();
-        while (clock() - start_t < state->interval) {}
+        while (getTime() - start_t < state->interval) {}
     }
 }
 
@@ -131,11 +140,17 @@ int main(int argc, char **argv)
     // Initialize state and local variables
     struct state state;
     init_state(&state, argc, argv);
-    clock_t start_t, end_t;
+    uint64_t start_t, end_t;
     int sending = 1;
     printf("Please type a message (exit to stop).\n");
+    char all_one_msg[129];
+    for (uint32_t i = 0; i < 120; i++)
+        all_one_msg[i] = '1';
+    for (uint32_t i = 120; i < 128; i++)
+        all_one_msg[i] = '1';
+    all_one_msg[128] = '\0';
     while (sending) {
-
+#if 1
         // Get a message to send from the user
         printf("< ");
         char text_buf[128];
@@ -145,25 +160,33 @@ int main(int argc, char **argv)
             sending = 0;
         }
 
-        // Convert that message to binary
         char *msg = string_to_binary(text_buf);
-        debug("%s\n", msg);
+#else
+        char *msg = all_one_msg;
+#endif
 
         // If we are in benchmark mode, start measuring the time
         if (state.benchmark_mode) {
-            start_t = clock();
+            start_t = getTime();
         }
 
         // Send a '10101011' byte to let the receiver detect that
         // I am about to send a start string and sync
-        for (int i = 0; i < 8; i++) {
+        size_t msg_len = strlen(msg);
+
+        // sync on clock edge
+        while((getTime() & 0x003fffff) > 20000) {}
+
+        for (int i = 0; i < 10; i++) {
+            while((getTime() & 0x003fffff) > 20000) {}
             send_bit(i % 2 == 0, &state);
         }
+        while((getTime() & 0x003fffff) > 20000) {}
         send_bit(true, &state);
+        while((getTime() & 0x003fffff) > 20000) {}
         send_bit(true, &state);
 
         // Send the message bit by bit
-        size_t msg_len = strlen(msg);
         for (int ind = 0; ind < msg_len; ind++) {
             if (msg[ind] == '0') {
                 send_bit(false, &state);
@@ -172,13 +195,15 @@ int main(int argc, char **argv)
             }
         }
 
+        debug("message %s sent\n", msg);
+
         // If we are in benchmark mode, finish measuring the
         // time and print the bit rate.
-        if (state.benchmark_mode) {
-            end_t = clock();
-            printf("Bitrate: %.2f Bytes/second\n",
-                   ((double) strlen(text_buf)) / ((double) (end_t - start_t) / CLOCKS_PER_SEC));
-        }
+        // if (state.benchmark_mode) {
+        //     end_t = getTime();
+        //     printf("Bitrate: %.2f Bytes/second\n",
+        //            ((double) strlen(text_buf)) / ((double) (end_t - start_t) / CLOCKS_PER_SEC));
+        // }
     }
 
     printf("Sender finished\n");
