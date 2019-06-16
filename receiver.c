@@ -13,7 +13,7 @@ void init_state(struct state *state, int argc, char **argv)
     uint64_t bsize = 256 * CACHE_WAYS_L1 * L1_way_stride; // 64 * 8 * 4k = 2M
 
     // Allocate a buffer twice the size of the L1 cache
-    state->buffer = allocateBuffer(bsize);
+    state->buffer = allocate_buffer(bsize);
 
     printf("buffer pointer addr %p\n", state->buffer);
     // Initialize the buffer to be be the non-zero page
@@ -28,8 +28,8 @@ void init_state(struct state *state, int argc, char **argv)
     // NOTE: Make sure that interval is the same in both sender and receiver
     state->cache_region = CHANNEL_DEFAULT_REGION;
     state->interval = CHANNEL_DEFAULT_INTERVAL;
-    state->access_period = CHANNEL_DEFAULT_ACCESS_PERIOD;
-    state->prime_period = 0; // default is half of (interval - access_period)
+    state->access_period = CHANNEL_DEFAULT_PERIOD;
+    state->prime_period = CHANNEL_DEFAULT_PERIOD;
 
     // Parse the command line flags
     //      -d is used to enable the debug prints
@@ -55,13 +55,14 @@ void init_state(struct state *state, int argc, char **argv)
         }
     }
 
-    if (state->prime_period == 0) {
-        state->prime_period = (state->interval - state->access_period) / 2;
-        state->probe_period = (state->interval - state->access_period) / 2;
+    if (state->interval < state->prime_period + state->access_period) {
+        fprintf(stderr, "ERROR: channel bit interval too short!\n");
+        exit(-1);
     }
     else {
-        state->probe_period = (state->interval - state->prime_period - state->access_period);
+        state->probe_period = state->interval - state->prime_period - state->access_period;
     }
+
     // debug("prime %u access %u probe %u\n", state->prime_period, state->access_period, state->probe_period);
 
     // Construct the addr_set by taking the addresses that have cache set index 0
@@ -74,7 +75,7 @@ void init_state(struct state *state, int argc, char **argv)
             addr_set_size++;
         }
         // restrict the probing set to CACHE_WAYS_L1 to aviod self eviction
-        if (addr_set_size >= CACHE_WAYS_L1) break;
+        // if (addr_set_size >= CACHE_WAYS_L1) break;
     }
 
     printf("Found addr_set size of %u\n", addr_set_size);
@@ -86,80 +87,78 @@ void init_state(struct state *state, int argc, char **argv)
  * probing set and counting the number of misses for the clock length of state->interval.
  *
  * If the the first_bit argument is true, relax the strict definition of "one" and try to
- * sync with the sender.
+ * cc_sync with the sender.
  */
+// bool detect_bit(const struct state *state, bool first_bit, uint64_t start_t)
 bool detect_bit(const struct state *state, bool first_bit)
 {
-    uint64_t start_t, curr_t;
-
-    start_t = getTime();
-    curr_t = start_t;
-
+    uint64_t start_t = get_time();
     int misses = 0;
     int hits = 0;
     int total_measurements = 0;
 
     // miss in L3
-    int misses_time_threshold = 200;
+    int misses_time_threshold = 220;
     struct Node *current = NULL;
 
-    if ((getTime() - start_t) < state->interval) {
-        // prime
-        uint64_t prime_count = 0;
-        do {
-            current = state->addr_set;
-            while (current != NULL && current->next != NULL) {
-                volatile uint64_t* addr1 = (uint64_t*) current->addr;
-                volatile uint64_t* addr2 = (uint64_t*) current->next->addr;
-                *addr1;
-                *addr2;
-                *addr1;
-                *addr2;
-                current = current->next;
-                prime_count++;
-            }
-        } while ((getTime() - start_t) < state->prime_period);
-
-        // wait for sender to access
-        while (getTime() - start_t < (state->prime_period + state->access_period)) {}
-
-        // probe
+    // prime
+    uint64_t prime_count = 0;
+    do {
         current = state->addr_set;
-        while (current != NULL && (getTime() - start_t) < state->interval) {
-            ADDR_PTR addr = current->addr;
-            CYCLES time = measure_one_block_access_time(addr);
-
-            // When the access time is larger than 1000 cycles,
-            // it is usually due to a long-latency page walk.
-            // We exclude such misses
-            // because they are not caused by accesses from the sender.
-            total_measurements += time < 600;
-            misses  += (time < 600) && (time > misses_time_threshold);
-            hits    += (time < 600) && (time <= misses_time_threshold);
-
+        while (current != NULL && current->next != NULL) {
+            volatile uint64_t* addr1 = (uint64_t*) current->addr;
+            volatile uint64_t* addr2 = (uint64_t*) current->next->addr;
+            *addr1;
+            *addr2;
+            *addr1;
+            *addr2;
             current = current->next;
+            prime_count++;
         }
+    } while ((get_time() - start_t) < state->prime_period);
+    // debug("prime count%lu\n", prime_count);
 
-        while (getTime() - start_t < state->interval) {}
+    // wait for sender to access
+    while (get_time() - start_t < (state->prime_period + state->access_period)) {}
+
+    // probe
+    current = state->addr_set;
+    while (current != NULL && (get_time() - start_t) < state->interval) {
+        ADDR_PTR addr = current->addr;
+        CYCLES time = measure_one_block_access_time(addr);
+
+        // When the access time is larger than 1000 cycles,
+        // it is usually due to a long-latency page walk.
+        // We exclude such misses
+        // because they are not caused by accesses from the sender.
+        total_measurements += time < 800;
+        misses  += (time < 800) && (time > misses_time_threshold);
+        hits    += (time < 800) && (time <= misses_time_threshold);
+
+        current = current->next;
     }
 
     if (misses != 0) {
         debug("Misses: %d out of %d \n", misses, total_measurements);
     }
 
-    return (misses > (float) total_measurements / 2)? 1: 0;
+    bool ret = (misses > CACHE_WAYS_L1 / 2)? true: false;
+
+    while (get_time() - start_t < state->interval) {}
+
+    return ret;
 }
 
 // This is the only hardcoded variable which defines the max size of a message
 // to be the same as the max size of the message in the starter code of the sender.
-static const int max_buffer_len = 128 * 8;
+// static const int MAX_BUFFER_LEN = 128 * 8;
 
 int main(int argc, char **argv)
 {
     // Initialize state and local variables
     struct state state;
     init_state(&state, argc, argv);
-    char msg_ch[max_buffer_len + 1];
+    char msg_ch[MAX_BUFFER_LEN + 1];
     int flip_sequence = 4;
     bool first_time = true;
     bool current;
@@ -169,8 +168,9 @@ int main(int argc, char **argv)
     getchar();
     while (1) {
 
-        // sync on clock edge
-        while((getTime() & 0x003fffff) > 20000) {}
+        // cc_sync on clock edge
+        uint64_t start_t = cc_sync();
+        // current = detect_bit(&state, first_time, start_t);
         current = detect_bit(&state, first_time);
 
         // This receiving loop is a sort of finite state machine.
@@ -180,8 +180,8 @@ int main(int argc, char **argv)
         // Starting from the base state, it first looks for a sequence
         // of bits of the form "1010" (ref: flip_sequence variable).
         //
-        // The first 1 is used to synchronize, the following ones are
-        // used to make sure that the synchronization was right.
+        // The first 1 is used to cc_synchronize, the following ones are
+        // used to make sure that the cc_synchronization was right.
         //
         // Once these bits have been detected, if there are other bit
         // flips, the receiver ignores them.
@@ -199,30 +199,40 @@ int main(int argc, char **argv)
         if (flip_sequence == 0 && current == 1 && previous == 1) {
             debug("Start sequence fully detected.\n\n");
 
-            int binary_msg_len = 0;
-            int strike_zeros = 0;
-            for (int i = 0; i < max_buffer_len; i++) {
-                binary_msg_len++;
+            uint32_t msg_len = 0, strike_zeros = 0;
+            start_t = cc_sync();
+            for (msg_len = 0; msg_len < MAX_BUFFER_LEN; msg_len++) {
+#if 1
+                // uint32_t bit = detect_bit(&state, first_time, start_t);
+                uint32_t bit = detect_bit(&state, first_time);
+                msg_ch[msg_len] = '0' + bit;
+                strike_zeros = (strike_zeros + (1-bit)) & (bit-1);
+                if (strike_zeros >= 8 && ((msg_len & 0x7) == 0)) {
+                    debug("String finished\n");
+                    break;
+                }
 
+#else
                 if (detect_bit(&state, first_time)) {
-                    msg_ch[i] = '1';
+                    msg_ch[msg_len] = '1';
                     strike_zeros = 0;
-
                 } else {
-                    msg_ch[i] = '0';
-                    if (++strike_zeros >= 8 && i % 8 == 0) {
+                    msg_ch[msg_len] = '0';
+                    if (++strike_zeros >= 8 && msg_len % 8 == 0) {
                         debug("String finished\n");
                         break;
                     }
                 }
+#endif
+                start_t += state.interval;
             }
 
-            msg_ch[binary_msg_len - 8] = '\0';
-            debug("Binary string received %s\n", msg_ch);
+            msg_ch[msg_len - 8] = '\0';
+            printf("message %s received\n", msg_ch);
 
-            int ascii_msg_len = binary_msg_len / 8;
+            uint32_t ascii_msg_len = msg_len / 8;
             char msg[ascii_msg_len];
-            printf("> %s\n", conv_char(msg_ch, ascii_msg_len, msg));
+            printf("> %s\n", conv_msg(msg_ch, ascii_msg_len, msg));
             if (strcmp(msg, "exit") == 0) {
                 break;
             }

@@ -63,10 +63,12 @@ inline CYCLES measure_one_block_access_time(ADDR_PTR addr)
     asm volatile("mov %1, %%r8\n\t"
             "lfence\n\t"
             "rdtsc\n\t"
+            "lfence\n\t"
             "mov %%eax, %%edi\n\t"
             "mov (%%r8), %%r8\n\t"
             "lfence\n\t"
             "rdtsc\n\t"
+            "lfence\n\t"
             "sub %%edi, %%eax\n\t"
     : "=a"(cycles) /*output*/
     : "r"(addr)
@@ -87,7 +89,8 @@ static inline uint64_t rdtsc() {
     return (d << 32) | a;
 }
 
-uint64_t getTime();
+uint64_t get_time();
+uint64_t cc_sync();
 
 uint64_t printPID();
 
@@ -96,12 +99,13 @@ int ipow(int base, int exp);
 char *string_to_binary(char *s);
 
 char *conv_char(char *data, int size, char *msg);
+char *conv_msg(char *data, int size, char *msg);
 
 uint64_t get_cache_set_index(ADDR_PTR phys_addr);
 uint64_t get_hugepage_cache_set_index(ADDR_PTR virt_addr);
 uint64_t get_L1_cache_set_index(ADDR_PTR virt_addr);
 uint64_t get_L3_cache_set_index(ADDR_PTR virt_addr);
-void *allocateBuffer(uint64_t size);
+void *allocate_buffer(uint64_t size);
 
 void append_string_to_linked_list(struct Node **head, ADDR_PTR addr);
 
@@ -114,9 +118,6 @@ void append_string_to_linked_list(struct Node **head, ADDR_PTR addr);
 // static const int CACHE_WAYS_L3 = 16;
 // static const int CACHE_SLICES_L3 = 8;
 
-#define __rdtsc() ({ uint64_t __tmp;                             \
-                    __asm__ __volatile__ ("mrs %0, pmccntr_el0  " : "=r"(__tmp)); \
-                    __tmp; })
 
 
 // =======================================
@@ -151,8 +152,12 @@ void append_string_to_linked_list(struct Node **head, ADDR_PTR addr);
 // =======================================
 
 
-#define CHANNEL_DEFAULT_INTERVAL    0x400000
-#define CHANNEL_DEFAULT_REGION      0x0
-#define CHANNEL_DEFAULT_ACCESS_PERIOD 0x200000
+#define CHANNEL_DEFAULT_INTERVAL        0x60000
+#define CHANNEL_DEFAULT_PERIOD          0x20000
+#define CHANNEL_DEFAULT_REGION          0x0
+#define CHANNEL_SYNC_TIMEMASK           0x000fffff
+#define CHANNEL_SYNC_JITTER             0x4000
+
+#define MAX_BUFFER_LEN                  1024
 
 #endif

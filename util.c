@@ -59,7 +59,7 @@ uint64_t get_cache_set_index(ADDR_PTR phys_addr)
  * Allocate a buffer of the size as passed-in
  * returns the pointer to the buffer
  */
-void *allocateBuffer(uint64_t size) {
+void *allocate_buffer(uint64_t size) {
     void *buffer = MAP_FAILED;
 #ifdef HUGEPAGES
     buffer = mmap(NULL, size, PROT_READ|PROT_WRITE, MAP_ANON|MAP_PRIVATE|HUGEPAGES, -1, 0);
@@ -127,6 +127,22 @@ char *conv_char(char *data, int size, char *msg)
     return msg;
 }
 
+char *conv_msg(char *data, int size, char *msg) {
+    for (int i = 0; i < size; i++) {
+        char _tmp = 0;
+
+        for (int j = i * 8; j < ((i + 1) * 8); j++) {
+            _tmp = (_tmp << 1) + data[j] - '0';
+        }
+
+        msg[i] = _tmp;
+    }
+
+    msg[size] = '\0';
+
+    return msg;
+}
+
 /*
  * Appends the given string to the linked list which is pointed to by the given head
  */
@@ -158,8 +174,12 @@ uint64_t printPID() {
     return pid;
 }
 
-uint64_t getTime() {
+inline uint64_t get_time() {
     // can be a choice of channel?
     return rdtsc();
 }
 
+inline uint64_t cc_sync() {
+    while((get_time() & CHANNEL_SYNC_TIMEMASK) > CHANNEL_SYNC_JITTER) {}
+    return get_time();
+}

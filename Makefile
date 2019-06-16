@@ -1,4 +1,4 @@
-CFLAGS=-O0 -I /usr/local
+CFLAGS=-O1 -I /usr/local
 CC=gcc
 
 TARGETS=sender receiver sender_debug receiver_debug
