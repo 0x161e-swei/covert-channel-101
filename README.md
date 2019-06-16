@@ -1,3 +1,12 @@
+# AWS LLC Prime+Probe Implementation
+This branch currently works on
+- an aws i3-metal machines
+- an aws m4.xlarge dedicated instance
+
+
+
+
+
 # Chat on an LLC covert channel
 
 This repository contains a sender and a receiver that can be used for a cross-process exchange of messages

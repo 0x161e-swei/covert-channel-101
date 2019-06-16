@@ -47,49 +47,33 @@ struct Node {
 struct state {
     char *buffer;
     struct Node *addr_set;
-    int interval;
     uint64_t cache_region;
-    bool benchmark_mode; // sender only
-    int wait_period_between_measurements; // receiver only
+    uint64_t interval;
+    uint64_t prime_period;
+    uint64_t access_period;
+    uint64_t probe_period;
+    bool benchmark_mode;        // sender only
     Channel channel;
 };
 
-inline CYCLES measure_one_block_access_time(ADDR_PTR addr)
-{
-    CYCLES cycles;
-
-    asm volatile("mov %1, %%r8\n\t"
-            "lfence\n\t"
-            "rdtsc\n\t"
-            "mov %%eax, %%edi\n\t"
-            "mov (%%r8), %%r8\n\t"
-            "lfence\n\t"
-            "rdtsc\n\t"
-            "sub %%edi, %%eax\n\t"
-    : "=a"(cycles) /*output*/
-    : "r"(addr)
-    : "r8", "edi");
-
-    return cycles;
-}
-
-inline void clflush(ADDR_PTR addr) {
-    asm volatile ("clflush (%0)"::"r"(addr));
-}
+uint64_t measure_one_block_access_time(ADDR_PTR addr);
+void clflush(ADDR_PTR addr);
+uint64_t rdtsc();
+uint64_t get_time();
+uint64_t cc_sync();
 
 uint64_t printPID();
-
 int ipow(int base, int exp);
 
 char *string_to_binary(char *s);
-
 char *conv_char(char *data, int size, char *msg);
+char *conv_msg(char *data, int size, char *msg);
 
 uint64_t get_cache_set_index(ADDR_PTR phys_addr);
 uint64_t get_hugepage_cache_set_index(ADDR_PTR virt_addr);
-uint64_t get_L1_cache_set_index(ADDR_PTR virt_addr);
+uint64_t get_cache_slice_set_index(ADDR_PTR virt_addr);
 uint64_t get_L3_cache_set_index(ADDR_PTR virt_addr);
-void *allocateBuffer(uint64_t size);
+void *allocate_buffer(uint64_t size);
 
 void append_string_to_linked_list(struct Node **head, ADDR_PTR addr);
 
@@ -101,6 +85,7 @@ void append_string_to_linked_list(struct Node **head, ADDR_PTR addr);
 // static const int CACHE_SETS_L3 = 8192;
 // static const int CACHE_WAYS_L3 = 16;
 // static const int CACHE_SLICES_L3 = 8;
+
 
 
 // =======================================
@@ -121,6 +106,7 @@ void append_string_to_linked_list(struct Node **head, ADDR_PTR addr);
 #define CACHE_SETS_L1       64
 #define CACHE_SETS_L1_MASK  (CACHE_SETS_L1 - 1)
 #define CACHE_WAYS_L1       8
+#define CACHE_WAYS_L2       8
 
 // LLC
 
@@ -134,9 +120,13 @@ void append_string_to_linked_list(struct Node **head, ADDR_PTR addr);
 // Covert Channel Default Configuration
 // =======================================
 
-
-#define CHANNEL_DEFAULT_INTERVAL    200
-#define CHANNEL_DEFAULT_REGION      0x0
-#define CHANNEL_DEFAULT_WAIT_PERIOD 80
+// Access period of 0x00050000 seems too be sufficient for i3-metal
+#define CHANNEL_DEFAULT_INTERVAL        0x000f0000
+#define CHANNEL_DEFAULT_PERIOD          0x00050000
+#define CHANNEL_DEFAULT_REGION          0x0
+#define CHANNEL_SYNC_TIMEMASK           0x003fffff
+#define CHANNEL_SYNC_JITTER             0x4000
+#define CHANNEL_L3_MISS_THRESHOLD       220
+#define MAX_BUFFER_LEN                  1024
 
 #endif

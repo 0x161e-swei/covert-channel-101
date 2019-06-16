@@ -10,11 +10,12 @@ void init_state(struct state *state, int argc, char **argv)
     // The following calculations are based on the paper:
     //      C5: Cross-Cores Cache Covert Channel (dimva 2015)
     int L3_way_stride = ipow(2, LOG_CACHE_SETS_L3 + LOG_CACHE_LINESIZE);
-    uint64_t bsize = 4 * CACHE_WAYS_L3 * L3_way_stride;
+    uint64_t bsize = 32 * CACHE_WAYS_L3 * L3_way_stride;
 
     // Allocate a buffer of the size of the LLC
     // state->buffer = malloc((size_t) bsize);
-    state->buffer = allocateBuffer(bsize);
+    state->buffer = allocate_buffer(bsize);
+    printf("buffer pointer addr %p\n", state->buffer);
 
     // Initialize the buffer to be be the non-zero page
     for (uint32_t i = 0; i < bsize; i += 64) {
@@ -27,8 +28,10 @@ void init_state(struct state *state, int argc, char **argv)
 
     // This number may need to be tuned up to the specific machine in use
     // NOTE: Make sure that interval is the same in both sender and receiver
-    state->interval = CHANNEL_DEFAULT_INTERVAL;
     state->cache_region = CHANNEL_DEFAULT_REGION;
+    state->interval = CHANNEL_DEFAULT_INTERVAL;
+    state->access_period = CHANNEL_DEFAULT_PERIOD;
+    state->prime_period = CHANNEL_DEFAULT_PERIOD;
 
 
     // Parse the command line flags
@@ -36,7 +39,7 @@ void init_state(struct state *state, int argc, char **argv)
     //      -b is used to enable the benchmark mode (to measure the sending bitrate)
     //      -i is used to specify a custom value for the time interval
     int option;
-    while ((option = getopt(argc, argv, "di:w:br:")) != -1) {
+    while ((option = getopt(argc, argv, "di:a:br:")) != -1) {
         switch (option) {
             case 'b':
                 state->benchmark_mode = true;
@@ -47,6 +50,9 @@ void init_state(struct state *state, int argc, char **argv)
             case 'r':
                 state->cache_region = atoi(optarg);
                 break;
+            case 'a':
+                state->access_period = atoi(optarg);
+                break;
             case '?':
                 fprintf(stderr, "Unknown option character `\\x%x'.\n", optopt);
                 exit(1);
@@ -55,22 +61,32 @@ void init_state(struct state *state, int argc, char **argv)
         }
     }
 
+    if (state->interval < state->prime_period + state->access_period) {
+        fprintf(stderr, "ERROR: channel bit interval too short!\n");
+        exit(-1);
+    }
+    else {
+        state->probe_period = state->interval - state->prime_period - state->access_period;
+    }
+
     // Construct the addr_set by taking the addresses that have cache set index 0
-    // There should be 128 such addresses in our buffer:
-    //  one per line per cache set 0 of each slice (8 * 16).
     uint32_t addr_set_size = 0;
     for (int set_index = 0; set_index < CACHE_SETS_L3; set_index++) {
-        for (int line_index = 0; line_index < 4 * CACHE_WAYS_L3; line_index++) {
-
+        for (uint32_t line_index = 0; line_index < 32 * CACHE_WAYS_L3; line_index++) {
+            // a simple hash to shuffle the lines in physical address space
+            uint32_t stride_idx = (line_index * 167 + 13) % (32 * CACHE_WAYS_L3);
             ADDR_PTR addr = (ADDR_PTR) (state->buffer + \
-                    set_index * CACHE_LINESIZE + line_index * L3_way_stride);
-            if (get_L3_cache_set_index(addr) == state->cache_region) {
+                    set_index * CACHE_LINESIZE + stride_idx * L3_way_stride);
+            // both of following function should work...L3 is a more restrict set
+            if (get_cache_slice_set_index(addr) == state->cache_region) {
+            // if (get_L3_cache_set_index(addr) == state->cache_region) {
                 append_string_to_linked_list(&state->addr_set, addr);
                 addr_set_size++;
             }
         }
     }
     printf("Found addr_set size of %u\n", addr_set_size);
+
 }
 
 /*
@@ -80,27 +96,41 @@ void init_state(struct state *state, int argc, char **argv)
  */
 void send_bit(bool one, const struct state *state)
 {
-    clock_t start_t, curr_t;
-
-    start_t = clock();
-    curr_t = start_t;
+    uint64_t start_t = get_time();
+    debug("time %lx\n", start_t);
 
     if (one) {
-        while ((curr_t - start_t) < state->interval) {
-            struct Node *current = state->addr_set;
-            while (current != NULL && (curr_t - start_t) < state->interval) {
-                ADDR_PTR addr = current->addr;
-                // clflush(addr);
-                uint64_t _tmp = *(uint64_t *)(addr);
+        // wait for receiver to prime the cache set
+        while (get_time() - start_t < state->prime_period) {}
 
-                curr_t = clock();
+        // access
+        uint64_t access_count = 0;
+        struct Node *current = NULL;
+        uint64_t stopTime = start_t + state->prime_period + state->access_period;
+        // uint64_t stopTime = start_t + state->interval;
+        do {
+            current = state->addr_set;
+            while (current != NULL && current->next != NULL && get_time() < stopTime) {
+            // while (current != NULL && get_time() < stopTime) {
+                volatile uint64_t* addr1 = (uint64_t*) current->addr;
+                volatile uint64_t* addr2 = (uint64_t*) current->next->addr;
+                *addr1;
+                *addr2;
+                *addr1;
+                *addr2;
+                *addr1;
+                *addr2;
                 current = current->next;
+                access_count++;
             }
-        }
+        } while (get_time() < stopTime);
+        debug("access count %lu time %lx\n", access_count, get_time() - start_t);
+
+        // wait for receiver to probe
+        while (get_time() - start_t < state->interval) {}
 
     } else {
-        start_t = clock();
-        while (clock() - start_t < state->interval) {}
+        while (get_time() - start_t < state->interval) {}
     }
 }
 
@@ -109,11 +139,17 @@ int main(int argc, char **argv)
     // Initialize state and local variables
     struct state state;
     init_state(&state, argc, argv);
-    clock_t start_t, end_t;
+    uint64_t start_t, end_t;
     int sending = 1;
     printf("Please type a message (exit to stop).\n");
+    char all_one_msg[129];
+    for (uint32_t i = 0; i < 120; i++)
+        all_one_msg[i] = '1';
+    for (uint32_t i = 120; i < 128; i++)
+        all_one_msg[i] = '1';
+    all_one_msg[128] = '\0';
     while (sending) {
-
+#if 1
         // Get a message to send from the user
         printf("< ");
         char text_buf[128];
@@ -123,40 +159,58 @@ int main(int argc, char **argv)
             sending = 0;
         }
 
-        // Convert that message to binary
         char *msg = string_to_binary(text_buf);
-        debug("%s\n", msg);
+#else
+        char *msg = all_one_msg;
+#endif
 
         // If we are in benchmark mode, start measuring the time
         if (state.benchmark_mode) {
-            start_t = clock();
+            start_t = get_time();
         }
 
         // Send a '10101011' byte to let the receiver detect that
-        // I am about to send a start string and sync
-        for (int i = 0; i < 8; i++) {
+        // I am about to send a start string and cc_sync
+        size_t msg_len = strlen(msg);
+
+        // cc_sync on clock edge
+        uint64_t start_t =  cc_sync();
+
+        for (int i = 0; i < 10; i++) {
+            start_t = cc_sync();
+            // send_bit(i % 2 == 0, &state, start_t);
             send_bit(i % 2 == 0, &state);
         }
+        start_t = cc_sync();
+        // send_bit(true, &state, start_t);
         send_bit(true, &state);
+        start_t = cc_sync();
+        // send_bit(true, &state, start_t);
         send_bit(true, &state);
 
         // Send the message bit by bit
-        size_t msg_len = strlen(msg);
-        for (int ind = 0; ind < msg_len; ind++) {
+        start_t = cc_sync();
+        // TODO: for longer messages it is recommended to re-sync every X bits
+        for (uint32_t ind = 0; ind < msg_len; ind++) {
             if (msg[ind] == '0') {
+                // send_bit(false, &state, start_t);
                 send_bit(false, &state);
             } else {
+                // send_bit(true, &state, start_t);
                 send_bit(true, &state);
             }
+            start_t += state.interval;
         }
+
+        printf("message %s sent\n", msg);
 
         // If we are in benchmark mode, finish measuring the
         // time and print the bit rate.
-        if (state.benchmark_mode) {
-            end_t = clock();
-            printf("Bitrate: %.2f Bytes/second\n",
-                   ((double) strlen(text_buf)) / ((double) (end_t - start_t) / CLOCKS_PER_SEC));
-        }
+        // if (state.benchmark_mode) {
+        //     end_t = get_time();
+        //     printf("Bitrate: %.2f Bytes/second\n",
+        //            ((double) strlen(text_buf)) / ((double) (end_t - start_t) / CLOCKS_PER_SEC));
+        // }
     }
 
     printf("Sender finished\n");
