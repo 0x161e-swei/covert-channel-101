@@ -10,7 +10,7 @@ void init_state(struct state *state, int argc, char **argv)
     // The following calculations are based on the paper:
     //      C5: Cross-Cores Cache Covert Channel (dimva 2015)
     int L1_way_stride = ipow(2, LOG_CACHE_SETS_L1 + LOG_CACHE_LINESIZE); // 4096
-    uint64_t bsize = 256 * CACHE_WAYS_L1 * L1_way_stride; // 64 * 8 * 4k = 2M
+    uint64_t bsize = 1024 * CACHE_WAYS_L1 * L1_way_stride; // 64 * 8 * 4k = 2M
 
     // Allocate a buffer twice the size of the L1 cache
     state->buffer = allocate_buffer(bsize);
@@ -68,14 +68,16 @@ void init_state(struct state *state, int argc, char **argv)
     // Construct the addr_set by taking the addresses that have cache set index 0
     // There will be at least one of such addresses in our buffer.
     uint32_t addr_set_size = 0;
-    for (int i = 0; i < 256 * CACHE_WAYS_L1 * CACHE_SETS_L1; i++) {
+    for (int i = 0; i < 1024 * CACHE_WAYS_L1 * CACHE_SETS_L1; i++) {
         ADDR_PTR addr = (ADDR_PTR) (state->buffer + CACHE_LINESIZE * i);
-        if (get_L3_cache_set_index(addr) == state->cache_region) {
+        // both of following function should work...L3 is a more restrict set
+        if (get_cache_slice_set_index(addr) == state->cache_region) {
+        // if (get_L3_cache_set_index(addr) == state->cache_region) {
             append_string_to_linked_list(&state->addr_set, addr);
             addr_set_size++;
         }
         // restrict the probing set to CACHE_WAYS_L1 to aviod self eviction
-        // if (addr_set_size >= CACHE_WAYS_L1) break;
+        if (addr_set_size >= CACHE_WAYS_L1 + CACHE_WAYS_L2) break;
     }
 
     printf("Found addr_set size of %u\n", addr_set_size);
@@ -93,12 +95,14 @@ void init_state(struct state *state, int argc, char **argv)
 bool detect_bit(const struct state *state, bool first_bit)
 {
     uint64_t start_t = get_time();
+    // debug("time %lx\n", start_t);
+
     int misses = 0;
     int hits = 0;
     int total_measurements = 0;
 
     // miss in L3
-    int misses_time_threshold = 220;
+    int misses_time_threshold = CHANNEL_L3_MISS_THRESHOLD;
     struct Node *current = NULL;
 
     // prime
@@ -125,7 +129,7 @@ bool detect_bit(const struct state *state, bool first_bit)
     current = state->addr_set;
     while (current != NULL && (get_time() - start_t) < state->interval) {
         ADDR_PTR addr = current->addr;
-        CYCLES time = measure_one_block_access_time(addr);
+        uint64_t time = measure_one_block_access_time(addr);
 
         // When the access time is larger than 1000 cycles,
         // it is usually due to a long-latency page walk.
@@ -136,10 +140,11 @@ bool detect_bit(const struct state *state, bool first_bit)
         hits    += (time < 800) && (time <= misses_time_threshold);
 
         current = current->next;
+        // debug("access time %lu\n", time);
     }
 
     if (misses != 0) {
-        debug("Misses: %d out of %d \n", misses, total_measurements);
+        debug("Misses: %d out of %d\n", misses, total_measurements);
     }
 
     bool ret = (misses > CACHE_WAYS_L1 / 2)? true: false;

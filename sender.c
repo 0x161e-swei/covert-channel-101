@@ -10,7 +10,7 @@ void init_state(struct state *state, int argc, char **argv)
     // The following calculations are based on the paper:
     //      C5: Cross-Cores Cache Covert Channel (dimva 2015)
     int L3_way_stride = ipow(2, LOG_CACHE_SETS_L3 + LOG_CACHE_LINESIZE);
-    uint64_t bsize = 64 * CACHE_WAYS_L3 * L3_way_stride;
+    uint64_t bsize = 32 * CACHE_WAYS_L3 * L3_way_stride;
 
     // Allocate a buffer of the size of the LLC
     // state->buffer = malloc((size_t) bsize);
@@ -70,15 +70,16 @@ void init_state(struct state *state, int argc, char **argv)
     }
 
     // Construct the addr_set by taking the addresses that have cache set index 0
-    // There should be 128 such addresses in our buffer:
-    //  one per line per cache set 0 of each slice (8 * 16).
     uint32_t addr_set_size = 0;
     for (int set_index = 0; set_index < CACHE_SETS_L3; set_index++) {
-        for (int line_index = 0; line_index < 64 * CACHE_WAYS_L3; line_index++) {
-
+        for (uint32_t line_index = 0; line_index < 32 * CACHE_WAYS_L3; line_index++) {
+            // a simple hash to shuffle the lines in physical address space
+            uint32_t stride_idx = (line_index * 167 + 13) % (32 * CACHE_WAYS_L3);
             ADDR_PTR addr = (ADDR_PTR) (state->buffer + \
-                    set_index * CACHE_LINESIZE + line_index * L3_way_stride);
-            if (get_L3_cache_set_index(addr) == state->cache_region) {
+                    set_index * CACHE_LINESIZE + stride_idx * L3_way_stride);
+            // both of following function should work...L3 is a more restrict set
+            if (get_cache_slice_set_index(addr) == state->cache_region) {
+            // if (get_L3_cache_set_index(addr) == state->cache_region) {
                 append_string_to_linked_list(&state->addr_set, addr);
                 addr_set_size++;
             }
@@ -96,6 +97,7 @@ void init_state(struct state *state, int argc, char **argv)
 void send_bit(bool one, const struct state *state)
 {
     uint64_t start_t = get_time();
+    debug("time %lx\n", start_t);
 
     if (one) {
         // wait for receiver to prime the cache set
@@ -188,6 +190,7 @@ int main(int argc, char **argv)
 
         // Send the message bit by bit
         start_t = cc_sync();
+        // TODO: for longer messages it is recommended to re-sync every X bits
         for (uint32_t ind = 0; ind < msg_len; ind++) {
             if (msg[ind] == '0') {
                 // send_bit(false, &state, start_t);
