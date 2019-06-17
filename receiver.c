@@ -7,39 +7,102 @@
 void init_config(struct config *config, int argc, char **argv)
 {
     uint64_t pid = printPID();
-    
+
     init_default(config, argc, argv);
 
-    int L1_way_stride = ipow(2, LOG_CACHE_SETS_L1 + LOG_CACHE_LINESIZE); // 4096
-    uint64_t bsize = 1024 * CACHE_WAYS_L1 * L1_way_stride; // 64 * 8 * 4k = 2M
+    if (config->channel == PrimeProbe) {
+        int L1_way_stride = ipow(2, LOG_CACHE_SETS_L1 + LOG_CACHE_LINESIZE); // 4096
+        uint64_t bsize = 1024 * CACHE_WAYS_L1 * L1_way_stride; // 64 * 8 * 4k = 2M
 
-    // Allocate a buffer twice the size of the L1 cache
-    config->buffer = allocate_buffer(bsize);
+        // Allocate a buffer twice the size of the L1 cache
+        config->buffer = allocate_buffer(bsize);
 
-    printf("buffer pointer addr %p\n", config->buffer);
-    // Initialize the buffer to be be the non-zero page
-    for (uint32_t i = 0; i < bsize; i += 64) {
-        *(config->buffer + i) = pid;
-    }
-    // Construct the addr_set by taking the addresses that have cache set index 0
-    // There will be at least one of such addresses in our buffer.
-    uint32_t addr_set_size = 0;
-    for (int i = 0; i < 1024 * CACHE_WAYS_L1 * CACHE_SETS_L1; i++) {
-        ADDR_PTR addr = (ADDR_PTR) (config->buffer + CACHE_LINESIZE * i);
-        // both of following function should work...L3 is a more restrict set
-        if (get_cache_slice_set_index(addr) == config->cache_region) {
-        // if (get_L3_cache_set_index(addr) == config->cache_region) {
-            append_string_to_linked_list(&config->addr_set, addr);
-            addr_set_size++;
+        printf("buffer pointer addr %p\n", config->buffer);
+        // Initialize the buffer to be be the non-zero page
+        for (uint32_t i = 0; i < bsize; i += 64) {
+            *(config->buffer + i) = pid;
         }
-        // restrict the probing set to CACHE_WAYS_L1 to aviod self eviction
-        if (addr_set_size >= CACHE_WAYS_L1 + CACHE_WAYS_L2) break;
+        // Construct the addr_set by taking the addresses that have cache set index 0
+        // There will be at least one of such addresses in our buffer.
+        uint32_t addr_set_size = 0;
+        for (int i = 0; i < 1024 * CACHE_WAYS_L1 * CACHE_SETS_L1; i++) {
+            ADDR_PTR addr = (ADDR_PTR) (config->buffer + CACHE_LINESIZE * i);
+            // both of following function should work...L3 is a more restrict set
+            if (get_cache_slice_set_index(addr) == config->cache_region) {
+            // if (get_L3_cache_set_index(addr) == config->cache_region) {
+                append_string_to_linked_list(&config->addr_set, addr);
+                addr_set_size++;
+            }
+            // restrict the probing set to CACHE_WAYS_L1 to aviod self eviction
+            if (addr_set_size >= CACHE_WAYS_L1 + CACHE_WAYS_L2) break;
+        }
+
+        printf("Found addr_set size of %u\n", addr_set_size);
     }
 
-    printf("Found addr_set size of %u\n", addr_set_size);
+    if (config->channel == FlushReload) {
+        int inFile = open(config->shared_filename, O_RDONLY);
+        if (inFile == -1) {
+            fprintf(stderr, "ERROR: Failed to Open File\n");
+            exit(-1);
+        }
 
+        size_t size = 4096;
+        config->buffer = mmap(NULL, size, PROT_READ, MAP_SHARED, inFile, 0);
+        if (config->buffer == (void*) -1 ) {
+            fprintf(stderr, "ERROR: Failed to Map Address\n");
+            exit(-1);
+        }
+
+        ADDR_PTR addr = (ADDR_PTR) config->buffer + config->cache_region * 64;
+        append_string_to_linked_list(&config->addr_set, addr);
+        printf("File mapped at %p and monitoring line %lx\n", config->buffer, addr);
+
+    }
 }
 
+// receiver function pointer
+bool (*detect_bit)(const struct config*, bool);
+
+bool detect_bit_fr(const struct config *config, bool first_time) {
+    int misses = 0;
+	int hits = 0;
+	int total_measurements = 0;
+
+	// This is high because the misses caused by clflush
+	// usually cause an access time larger than 150 cycles
+	int misses_time_threshold = 70;
+
+	uint64_t start_t = rdtsc();
+	while ((rdtsc() - start_t) < config->interval) {
+		uint64_t time = measure_one_block_access_time(config->addr_set->addr);
+
+		// When the access time is larger than 1000 cycles,
+		// it is usually due to a disk miss. We exclude such misses
+		// because they are not caused by clflush.
+		if (time < 1000) {
+			total_measurements++;
+			if (time > misses_time_threshold) {
+				misses++;
+			} else {
+				hits++;
+			}
+		}
+
+		// Busy loop to give time to the sender to flush the cache
+		uint64_t wait_t = rdtsc();
+		while((rdtsc() - wait_t) < config->access_period &&
+			       (rdtsc() - start_t) < config->interval);
+	}
+
+    if (misses != 0) {
+        debug("Misses: %d out of %d\n", misses, total_measurements);
+    }
+
+    bool ret =  misses > (float) total_measurements / 2.0;
+	return ret;
+
+}
 /*
  * Detects a bit by repeatedly measuring the access time of the addresses in the
  * probing set and counting the number of misses for the clock length of config->interval.
@@ -48,7 +111,7 @@ void init_config(struct config *config, int argc, char **argv)
  * cc_sync with the sender.
  */
 // bool detect_bit(const struct config *config, bool first_bit, uint64_t start_t)
-bool detect_bit(const struct config *config, bool first_bit)
+bool detect_bit_pp(const struct config *config, bool first_bit)
 {
     uint64_t start_t = get_time();
     // debug("time %lx\n", start_t);
@@ -119,6 +182,13 @@ int main(int argc, char **argv)
     // Initialize config and local variables
     struct config config;
     init_config(&config, argc, argv);
+    if (config.channel == PrimeProbe) {
+        detect_bit = detect_bit_pp;
+    }
+    else if (config.channel == FlushReload) {
+        detect_bit = detect_bit_fr;
+    }
+
     char msg_ch[MAX_BUFFER_LEN + 1];
     int flip_sequence = 4;
     bool first_time = true;
