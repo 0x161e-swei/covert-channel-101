@@ -66,6 +66,7 @@ uint64_t get_time();
 uint64_t cc_sync();
 
 uint64_t printPID();
+void print_help();
 int ipow(int base, int exp);
 
 char *string_to_binary(char *s);
