@@ -41,10 +41,10 @@ struct Node {
 };
 
 /*
- * Execution state of the program, with the variables
+ * Execution config of the program, with the variables
  * that we need to pass around the various functions.
  */
-struct state {
+struct config {
     char *buffer;
     struct Node *addr_set;
     uint64_t cache_region;
@@ -76,6 +76,8 @@ uint64_t get_L3_cache_set_index(ADDR_PTR virt_addr);
 void *allocate_buffer(uint64_t size);
 
 void append_string_to_linked_list(struct Node **head, ADDR_PTR addr);
+
+void init_default(struct config *config, int argc, char **argv);
 
 // L1 properties
 // static const int CACHE_SETS_L1 = 64;
@@ -114,7 +116,6 @@ void append_string_to_linked_list(struct Node **head, ADDR_PTR addr);
 #define CACHE_SETS_L3       32768
 #define CACHE_SETS_L3_MASK  (CACHE_SETS_L3 - 1)
 #define CACHE_WAYS_L3       20
-#define CACHE_SLICES_L3     8
 
 // =======================================
 // Covert Channel Default Configuration

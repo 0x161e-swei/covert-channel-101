@@ -1,79 +1,35 @@
 #include "util.h"
 
 /*
- * Parses the arguments and flags of the program and initializes the struct state
+ * Parses the arguments and flags of the program and initializes the struct config
  * with those parameters (or the default ones if no custom flags are given).
  */
-void init_state(struct state *state, int argc, char **argv)
+void init_config(struct config *config, int argc, char **argv)
 {
     uint64_t pid = printPID();
-    // The following calculations are based on the paper:
-    //      C5: Cross-Cores Cache Covert Channel (dimva 2015)
+    
+    init_default(config, argc, argv);
+
     int L1_way_stride = ipow(2, LOG_CACHE_SETS_L1 + LOG_CACHE_LINESIZE); // 4096
     uint64_t bsize = 1024 * CACHE_WAYS_L1 * L1_way_stride; // 64 * 8 * 4k = 2M
 
     // Allocate a buffer twice the size of the L1 cache
-    state->buffer = allocate_buffer(bsize);
+    config->buffer = allocate_buffer(bsize);
 
-    printf("buffer pointer addr %p\n", state->buffer);
+    printf("buffer pointer addr %p\n", config->buffer);
     // Initialize the buffer to be be the non-zero page
     for (uint32_t i = 0; i < bsize; i += 64) {
-        *(state->buffer + i) = pid;
+        *(config->buffer + i) = pid;
     }
-
-    // Set some default state values.
-    state->addr_set = NULL;
-
-    // These numbers may need to be tuned up to the specific machine in use
-    // NOTE: Make sure that interval is the same in both sender and receiver
-    state->cache_region = CHANNEL_DEFAULT_REGION;
-    state->interval = CHANNEL_DEFAULT_INTERVAL;
-    state->access_period = CHANNEL_DEFAULT_PERIOD;
-    state->prime_period = CHANNEL_DEFAULT_PERIOD;
-
-    // Parse the command line flags
-    //      -d is used to enable the debug prints
-    //      -i is used to specify a custom value for the time interval
-    //      -w is used to specify a custom number of wait time between two probes
-    int option;
-    while ((option = getopt(argc, argv, "di:a:r:")) != -1) {
-        switch (option) {
-            case 'i':
-                state->interval = atoi(optarg);
-                break;
-            case 'r':
-                state->cache_region = atoi(optarg);
-                break;
-            case 'a':
-                state->access_period = atoi(optarg);
-                break;
-            case '?':
-                fprintf(stderr, "Unknown option character `\\x%x'.\n", optopt);
-                exit(1);
-            default:
-                exit(1);
-        }
-    }
-
-    if (state->interval < state->prime_period + state->access_period) {
-        fprintf(stderr, "ERROR: channel bit interval too short!\n");
-        exit(-1);
-    }
-    else {
-        state->probe_period = state->interval - state->prime_period - state->access_period;
-    }
-
-    // debug("prime %u access %u probe %u\n", state->prime_period, state->access_period, state->probe_period);
-
     // Construct the addr_set by taking the addresses that have cache set index 0
     // There will be at least one of such addresses in our buffer.
     uint32_t addr_set_size = 0;
     for (int i = 0; i < 1024 * CACHE_WAYS_L1 * CACHE_SETS_L1; i++) {
-        ADDR_PTR addr = (ADDR_PTR) (state->buffer + CACHE_LINESIZE * i);
+        ADDR_PTR addr = (ADDR_PTR) (config->buffer + CACHE_LINESIZE * i);
         // both of following function should work...L3 is a more restrict set
-        if (get_cache_slice_set_index(addr) == state->cache_region) {
-        // if (get_L3_cache_set_index(addr) == state->cache_region) {
-            append_string_to_linked_list(&state->addr_set, addr);
+        if (get_cache_slice_set_index(addr) == config->cache_region) {
+        // if (get_L3_cache_set_index(addr) == config->cache_region) {
+            append_string_to_linked_list(&config->addr_set, addr);
             addr_set_size++;
         }
         // restrict the probing set to CACHE_WAYS_L1 to aviod self eviction
@@ -86,13 +42,13 @@ void init_state(struct state *state, int argc, char **argv)
 
 /*
  * Detects a bit by repeatedly measuring the access time of the addresses in the
- * probing set and counting the number of misses for the clock length of state->interval.
+ * probing set and counting the number of misses for the clock length of config->interval.
  *
  * If the the first_bit argument is true, relax the strict definition of "one" and try to
  * cc_sync with the sender.
  */
-// bool detect_bit(const struct state *state, bool first_bit, uint64_t start_t)
-bool detect_bit(const struct state *state, bool first_bit)
+// bool detect_bit(const struct config *config, bool first_bit, uint64_t start_t)
+bool detect_bit(const struct config *config, bool first_bit)
 {
     uint64_t start_t = get_time();
     // debug("time %lx\n", start_t);
@@ -108,7 +64,7 @@ bool detect_bit(const struct state *state, bool first_bit)
     // prime
     uint64_t prime_count = 0;
     do {
-        current = state->addr_set;
+        current = config->addr_set;
         while (current != NULL && current->next != NULL) {
             volatile uint64_t* addr1 = (uint64_t*) current->addr;
             volatile uint64_t* addr2 = (uint64_t*) current->next->addr;
@@ -119,15 +75,15 @@ bool detect_bit(const struct state *state, bool first_bit)
             current = current->next;
             prime_count++;
         }
-    } while ((get_time() - start_t) < state->prime_period);
+    } while ((get_time() - start_t) < config->prime_period);
     // debug("prime count%lu\n", prime_count);
 
     // wait for sender to access
-    while (get_time() - start_t < (state->prime_period + state->access_period)) {}
+    while (get_time() - start_t < (config->prime_period + config->access_period)) {}
 
     // probe
-    current = state->addr_set;
-    while (current != NULL && (get_time() - start_t) < state->interval) {
+    current = config->addr_set;
+    while (current != NULL && (get_time() - start_t) < config->interval) {
         ADDR_PTR addr = current->addr;
         uint64_t time = measure_one_block_access_time(addr);
 
@@ -149,7 +105,7 @@ bool detect_bit(const struct state *state, bool first_bit)
 
     bool ret = (misses > CACHE_WAYS_L1 / 2)? true: false;
 
-    while (get_time() - start_t < state->interval) {}
+    while (get_time() - start_t < config->interval) {}
 
     return ret;
 }
@@ -160,9 +116,9 @@ bool detect_bit(const struct state *state, bool first_bit)
 
 int main(int argc, char **argv)
 {
-    // Initialize state and local variables
-    struct state state;
-    init_state(&state, argc, argv);
+    // Initialize config and local variables
+    struct config config;
+    init_config(&config, argc, argv);
     char msg_ch[MAX_BUFFER_LEN + 1];
     int flip_sequence = 4;
     bool first_time = true;
@@ -175,14 +131,14 @@ int main(int argc, char **argv)
 
         // cc_sync on clock edge
         uint64_t start_t = cc_sync();
-        // current = detect_bit(&state, first_time, start_t);
-        current = detect_bit(&state, first_time);
+        // current = detect_bit(&config, first_time, start_t);
+        current = detect_bit(&config, first_time);
 
-        // This receiving loop is a sort of finite state machine.
+        // This receiving loop is a sort of finite config machine.
         // Once again, it would be easier to explain how it works
         // in a whiteboard, but here is an attempt to give an idea:
         //
-        // Starting from the base state, it first looks for a sequence
+        // Starting from the base config, it first looks for a sequence
         // of bits of the form "1010" (ref: flip_sequence variable).
         //
         // The first 1 is used to cc_synchronize, the following ones are
@@ -200,7 +156,7 @@ int main(int argc, char **argv)
         // into message receiving mode.
         //
         // Finally, when a NULL byte is received the receiver exits the
-        // message receiving mode and restarts from the base state.
+        // message receiving mode and restarts from the base config.
         if (flip_sequence == 0 && current == 1 && previous == 1) {
             debug("Start sequence fully detected.\n\n");
 
@@ -208,8 +164,8 @@ int main(int argc, char **argv)
             start_t = cc_sync();
             for (msg_len = 0; msg_len < MAX_BUFFER_LEN; msg_len++) {
 #if 1
-                // uint32_t bit = detect_bit(&state, first_time, start_t);
-                uint32_t bit = detect_bit(&state, first_time);
+                // uint32_t bit = detect_bit(&config, first_time, start_t);
+                uint32_t bit = detect_bit(&config, first_time);
                 msg_ch[msg_len] = '0' + bit;
                 strike_zeros = (strike_zeros + (1-bit)) & (bit-1);
                 if (strike_zeros >= 8 && ((msg_len & 0x7) == 0)) {
@@ -218,7 +174,7 @@ int main(int argc, char **argv)
                 }
 
 #else
-                if (detect_bit(&state, first_time)) {
+                if (detect_bit(&config, first_time)) {
                     msg_ch[msg_len] = '1';
                     strike_zeros = 0;
                 } else {
@@ -229,7 +185,7 @@ int main(int argc, char **argv)
                     }
                 }
 #endif
-                start_t += state.interval;
+                start_t += config.interval;
             }
 
             msg_ch[msg_len - 8] = '\0';

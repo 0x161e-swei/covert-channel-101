@@ -218,4 +218,73 @@ uint64_t printPID() {
     return pid;
 }
 
+void init_default(struct config *config, int argc, char **argv) {
 
+    config->buffer = NULL;
+    config->addr_set = NULL;
+
+    // Cache region specifies the targeted set
+    config->cache_region = CHANNEL_DEFAULT_REGION;
+    // Interval specifies the time used to send a single bit
+    config->interval = CHANNEL_DEFAULT_INTERVAL;
+
+    // Prime+Probe specific paramters:
+    config->access_period = CHANNEL_DEFAULT_PERIOD;
+    config->prime_period = CHANNEL_DEFAULT_PERIOD;
+
+    // Flush+Reload specific paramters:
+    // TODO: merge
+    // config->shared_filename =
+
+    config->benchmark_mode = false;
+
+    config->channel = PrimeProbe;
+
+    // Parse the command line flags
+    //      -d is used to enable the debug prints
+    //      -i is used to specify a custom value for the time interval
+    //      -w is used to specify a custom number of wait time between two probes
+    int option;
+    while ((option = getopt(argc, argv, "di:a:r:c:")) != -1) {
+        switch (option) {
+            case 'i':
+                config->interval = atoi(optarg);
+                break;
+            case 'r':
+                config->cache_region = atoi(optarg);
+                break;
+            case 'a':
+                config->access_period = atoi(optarg);
+                break;
+            case 'c':
+                // value 0,1,2 to select channel
+                config->channel = atoi(optarg);
+                break;
+            case '?':
+                fprintf(stderr, "Unknown option character `\\x%x'.\n", optopt);
+                exit(1);
+            default:
+                exit(1);
+        }
+    }
+
+    if (config->channel == PrimeProbe) {
+        if (config->interval < config->prime_period + config->access_period) {
+            fprintf(stderr, "ERROR: P+P channel bit interval too short!\n");
+            exit(-1);
+        }
+        else {
+            config->probe_period = config->interval - config->prime_period - config->access_period;
+        }
+    }
+
+    // debug("prime %u access %u probe %u\n", config->prime_period, config->access_period, config->probe_period);
+    //
+    if (config->channel == FlushReload) {
+        if (config->cache_region > 63) {
+            fprintf(stderr, "ERROR: F+R channel region should be within a 4K page (64lines)!\n");
+            exit(-1);
+        }
+    }
+
+}
