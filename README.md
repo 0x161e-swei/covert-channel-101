@@ -1,8 +1,8 @@
-# AWS LLC Prime+Probe Implementation
+# AWS LLC Prime+Probe and Flush+Reload Implementations
 This branch currently works on
 - an aws i3-metal machines
 - an aws m4.xlarge dedicated instance
-
+- a local Haswell (4c/8t) desktop
 
 
 

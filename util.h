@@ -10,6 +10,8 @@
 #include <unistd.h>
 #include <sys/mman.h>
 
+#include <fcntl.h>
+
 #ifndef UTIL_H_
 #define UTIL_H_
 
@@ -31,7 +33,7 @@
 #define CYCLES uint32_t
 
 typedef enum _channel {
-    PrimeProbe,
+    PrimeProbe = 0,
     FlushReload
 } Channel;
 
@@ -52,6 +54,7 @@ struct config {
     uint64_t prime_period;
     uint64_t access_period;
     uint64_t probe_period;
+    char *shared_filename;
     bool benchmark_mode;        // sender only
     Channel channel;
 };
@@ -63,6 +66,7 @@ uint64_t get_time();
 uint64_t cc_sync();
 
 uint64_t printPID();
+void print_help();
 int ipow(int base, int exp);
 
 char *string_to_binary(char *s);
@@ -129,5 +133,9 @@ void init_default(struct config *config, int argc, char **argv);
 #define CHANNEL_SYNC_JITTER             0x4000
 #define CHANNEL_L3_MISS_THRESHOLD       220
 #define MAX_BUFFER_LEN                  1024
+
+// TODO: following parameters need to be verified
+#define CHANNEL_FR_DEFAULT_INTERVAL     0x00008000 // (1<<15)
+#define CHANNEL_FR_DEFAULT_PERIOD       0x00000800 // (1<<11)
 
 #endif

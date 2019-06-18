@@ -9,46 +9,84 @@ void init_config(struct config *config, int argc, char **argv)
     uint64_t pid = printPID();
 
     init_default(config, argc, argv);
-    
-    int L3_way_stride = ipow(2, LOG_CACHE_SETS_L3 + LOG_CACHE_LINESIZE);
-    uint64_t bsize = 32 * CACHE_WAYS_L3 * L3_way_stride;
 
-    // Allocate a buffer of the size of the LLC
-    // config->buffer = malloc((size_t) bsize);
-    config->buffer = allocate_buffer(bsize);
-    printf("buffer pointer addr %p\n", config->buffer);
+    if (config->channel == PrimeProbe) {
+        int L3_way_stride = ipow(2, LOG_CACHE_SETS_L3 + LOG_CACHE_LINESIZE);
+        uint64_t bsize = 32 * CACHE_WAYS_L3 * L3_way_stride;
 
-    // Initialize the buffer to be be the non-zero page
-    for (uint32_t i = 0; i < bsize; i += 64) {
-        *(config->buffer + i) = pid;
-    }
+        // Allocate a buffer of the size of the LLC
+        // config->buffer = malloc((size_t) bsize);
+        config->buffer = allocate_buffer(bsize);
+        printf("buffer pointer addr %p\n", config->buffer);
 
-    // Construct the addr_set by taking the addresses that have cache set index 0
-    uint32_t addr_set_size = 0;
-    for (int set_index = 0; set_index < CACHE_SETS_L3; set_index++) {
-        for (uint32_t line_index = 0; line_index < 32 * CACHE_WAYS_L3; line_index++) {
-            // a simple hash to shuffle the lines in physical address space
-            uint32_t stride_idx = (line_index * 167 + 13) % (32 * CACHE_WAYS_L3);
-            ADDR_PTR addr = (ADDR_PTR) (config->buffer + \
-                    set_index * CACHE_LINESIZE + stride_idx * L3_way_stride);
-            // both of following function should work...L3 is a more restrict set
-            if (get_cache_slice_set_index(addr) == config->cache_region) {
-            // if (get_L3_cache_set_index(addr) == config->cache_region) {
-                append_string_to_linked_list(&config->addr_set, addr);
-                addr_set_size++;
+        // Initialize the buffer to be be the non-zero page
+        for (uint32_t i = 0; i < bsize; i += 64) {
+            *(config->buffer + i) = pid;
+        }
+
+        // Construct the addr_set by taking the addresses that have cache set index 0
+        uint32_t addr_set_size = 0;
+        for (int set_index = 0; set_index < CACHE_SETS_L3; set_index++) {
+            for (uint32_t line_index = 0; line_index < 32 * CACHE_WAYS_L3; line_index++) {
+                // a simple hash to shuffle the lines in physical address space
+                uint32_t stride_idx = (line_index * 167 + 13) % (32 * CACHE_WAYS_L3);
+                ADDR_PTR addr = (ADDR_PTR) (config->buffer + \
+                        set_index * CACHE_LINESIZE + stride_idx * L3_way_stride);
+                // both of following function should work...L3 is a more restrict set
+                if (get_cache_slice_set_index(addr) == config->cache_region) {
+                // if (get_L3_cache_set_index(addr) == config->cache_region) {
+                    append_string_to_linked_list(&config->addr_set, addr);
+                    addr_set_size++;
+                }
             }
         }
+        printf("Found addr_set size of %u\n", addr_set_size);
     }
-    printf("Found addr_set size of %u\n", addr_set_size);
+
+    if (config->channel == FlushReload) {
+        int inFile = open(config->shared_filename, O_RDONLY);
+        if (inFile == -1) {
+            fprintf(stderr, "ERROR: Failed to Open File\n");
+            exit(-1);
+        }
+
+        size_t size = 4096;
+        config->buffer = mmap(NULL, size, PROT_READ, MAP_SHARED, inFile, 0);
+        if (config->buffer == (void*) -1 ) {
+            fprintf(stderr, "ERROR: Failed to Map Address\n");
+            exit(-1);
+        }
+
+        ADDR_PTR addr = (ADDR_PTR) config->buffer + config->cache_region * 64;
+        append_string_to_linked_list(&config->addr_set, addr);
+        printf("File mapped at %p and monitoring line %lx\n", config->buffer, addr);
+    }
 
 }
 
+// sender function pointer
+void (*send_bit)(bool, const struct config*);
+
+void send_bit_fr(bool one, const struct config *config) {
+    uint64_t start_t = rdtsc();
+
+	if (one) {
+		ADDR_PTR addr = config->addr_set->addr;
+		while ((rdtsc() - start_t) < config->interval) {
+			clflush(addr);
+		}
+
+	} else {
+		start_t = rdtsc();
+		while (rdtsc() - start_t < config->interval) {}
+	}
+}
 /*
  * Sends a bit to the receiver by repeatedly flushing the addresses of the addr_set
  * for the clock length of config->interval when we are sending a one, or by doing nothing
  * for the clock length of config->interval when we are sending a zero.
  */
-void send_bit(bool one, const struct config *config)
+void send_bit_pp(bool one, const struct config *config)
 {
     uint64_t start_t = get_time();
     debug("time %lx\n", start_t);
@@ -93,6 +131,13 @@ int main(int argc, char **argv)
     // Initialize config and local variables
     struct config config;
     init_config(&config, argc, argv);
+    if (config.channel == PrimeProbe) {
+        send_bit = send_bit_pp;
+    }
+    else if (config.channel == FlushReload) {
+        send_bit = send_bit_fr;
+    }
+
     uint64_t start_t, end_t;
     int sending = 1;
     printf("Please type a message (exit to stop).\n");

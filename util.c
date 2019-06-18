@@ -218,6 +218,10 @@ uint64_t printPID() {
     return pid;
 }
 
+void print_help() {
+    // TODO
+}
+
 void init_default(struct config *config, int argc, char **argv) {
 
     config->buffer = NULL;
@@ -233,8 +237,7 @@ void init_default(struct config *config, int argc, char **argv) {
     config->prime_period = CHANNEL_DEFAULT_PERIOD;
 
     // Flush+Reload specific paramters:
-    // TODO: merge
-    // config->shared_filename =
+    config->shared_filename = "shared.txt";
 
     config->benchmark_mode = false;
 
@@ -262,8 +265,10 @@ void init_default(struct config *config, int argc, char **argv) {
                 break;
             case '?':
                 fprintf(stderr, "Unknown option character `\\x%x'.\n", optopt);
+                print_help();
                 exit(1);
             default:
+                print_help();
                 exit(1);
         }
     }
@@ -281,6 +286,8 @@ void init_default(struct config *config, int argc, char **argv) {
     // debug("prime %u access %u probe %u\n", config->prime_period, config->access_period, config->probe_period);
     //
     if (config->channel == FlushReload) {
+        config->access_period = CHANNEL_FR_DEFAULT_INTERVAL;
+        config->access_period = CHANNEL_FR_DEFAULT_PERIOD;
         if (config->cache_region > 63) {
             fprintf(stderr, "ERROR: F+R channel region should be within a 4K page (64lines)!\n");
             exit(-1);
