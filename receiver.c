@@ -34,7 +34,7 @@ void init_config(struct config *config, int argc, char **argv)
                 addr_set_size++;
             }
             // restrict the probing set to CACHE_WAYS_L1 to aviod self eviction
-            if (config->channel == L1D && addr_set_size >= CACHE_WAYS_L1) {
+            if (config->channel == L1DPrimeProbe && addr_set_size >= CACHE_WAYS_L1) {
 		break;
 	    }
 	    else if (addr_set_size >= 2 * (CACHE_WAYS_L1 + CACHE_WAYS_L2)) {
@@ -104,7 +104,7 @@ bool detect_bit_fr(const struct config *config, bool first_time) {
     }
 
     bool ret =  misses > (float) total_measurements / 2.0;
-	return ret;
+    return ret;
 
 }
 /*
@@ -169,7 +169,12 @@ bool detect_bit_pp(const struct config *config, bool first_bit)
         debug("Misses: %d out of %d\n", misses, total_measurements);
     }
 
-    bool ret = (misses > CACHE_WAYS_L1 / 2)? true: false;
+    bool ret = (misses > CACHE_WAYS_L1 / 2 - 1)? true: false;
+    // FIXME: If only one set region used in a L1D, the channel is really not
+    // reliable as too much noise even from stack reads and writes.
+    // Mulitple regions for each channel is recommended.
+    // The hardcoded 1 miss count threshold can be used for a noisy l1d-PP
+    // bool ret = (misses > 1)? true: false;
 
     while (get_time() - start_t < config->interval) {}
 
