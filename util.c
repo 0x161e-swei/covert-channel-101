@@ -273,7 +273,10 @@ void init_default(struct config *config, int argc, char **argv) {
         }
     }
 
-    if (config->channel == PrimeProbe) {
+    if (config->channel == PrimeProbe || config->channel == L1DPrimeProbe) {
+        config->miss_threshold = config->channel == PrimeProbe?
+                                 CHANNEL_L3_MISS_THRESHOLD:
+                                 CHANNEL_L1_MISS_THRESHOLD;
         if (config->interval < config->prime_period + config->access_period) {
             fprintf(stderr, "ERROR: P+P channel bit interval too short!\n");
             exit(-1);
@@ -288,6 +291,7 @@ void init_default(struct config *config, int argc, char **argv) {
     if (config->channel == FlushReload) {
         config->access_period = CHANNEL_FR_DEFAULT_INTERVAL;
         config->access_period = CHANNEL_FR_DEFAULT_PERIOD;
+        config->miss_threshold = CHANNEL_L1_MISS_THRESHOLD;
         if (config->cache_region > 63) {
             fprintf(stderr, "ERROR: F+R channel region should be within a 4K page (64lines)!\n");
             exit(-1);

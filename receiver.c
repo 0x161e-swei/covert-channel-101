@@ -10,7 +10,7 @@ void init_config(struct config *config, int argc, char **argv)
 
     init_default(config, argc, argv);
 
-    if (config->channel == PrimeProbe) {
+    if (config->channel == PrimeProbe || config->channel == L1DPrimeProbe) {
         int L1_way_stride = ipow(2, LOG_CACHE_SETS_L1 + LOG_CACHE_LINESIZE); // 4096
         uint64_t bsize = 1024 * CACHE_WAYS_L1 * L1_way_stride; // 64 * 8 * 4k = 2M
 
@@ -34,7 +34,12 @@ void init_config(struct config *config, int argc, char **argv)
                 addr_set_size++;
             }
             // restrict the probing set to CACHE_WAYS_L1 to aviod self eviction
-            if (addr_set_size >= 2*(CACHE_WAYS_L1 + CACHE_WAYS_L2)) break;
+            if (config->channel == L1D && addr_set_size >= CACHE_WAYS_L1) {
+		break;
+	    }
+	    else if (addr_set_size >= 2 * (CACHE_WAYS_L1 + CACHE_WAYS_L2)) {
+		break;
+	    }
         }
 
         printf("Found addr_set size of %u\n", addr_set_size);
@@ -71,7 +76,6 @@ bool detect_bit_fr(const struct config *config, bool first_time) {
 
 	// This is high because the misses caused by clflush
 	// usually cause an access time larger than 150 cycles
-	int misses_time_threshold = 70;
 
 	uint64_t start_t = rdtsc();
 	while ((rdtsc() - start_t) < config->interval) {
@@ -82,7 +86,7 @@ bool detect_bit_fr(const struct config *config, bool first_time) {
 		// because they are not caused by clflush.
 		if (time < 1000) {
 			total_measurements++;
-			if (time > misses_time_threshold) {
+			if (time > config->miss_threshold) {
 				misses++;
 			} else {
 				hits++;
@@ -121,7 +125,6 @@ bool detect_bit_pp(const struct config *config, bool first_bit)
     int total_measurements = 0;
 
     // miss in L3
-    int misses_time_threshold = CHANNEL_L3_MISS_THRESHOLD;
     struct Node *current = NULL;
 
     // prime
@@ -155,8 +158,8 @@ bool detect_bit_pp(const struct config *config, bool first_bit)
         // We exclude such misses
         // because they are not caused by accesses from the sender.
         total_measurements += time < 800;
-        misses  += (time < 800) && (time > misses_time_threshold);
-        hits    += (time < 800) && (time <= misses_time_threshold);
+        misses  += (time < 800) && (time > config->miss_threshold);
+        hits    += (time < 800) && (time <= config->miss_threshold);
 
         current = current->next;
         // debug("access time %lu\n", time);
@@ -182,7 +185,7 @@ int main(int argc, char **argv)
     // Initialize config and local variables
     struct config config;
     init_config(&config, argc, argv);
-    if (config.channel == PrimeProbe) {
+    if (config.channel == PrimeProbe || config.channel == L1DPrimeProbe) {
         detect_bit = detect_bit_pp;
     }
     else if (config.channel == FlushReload) {

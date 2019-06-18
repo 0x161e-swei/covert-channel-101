@@ -34,7 +34,8 @@
 
 typedef enum _channel {
     PrimeProbe = 0,
-    FlushReload
+    FlushReload,
+    L1DPrimeProbe
 } Channel;
 
 struct Node {
@@ -54,6 +55,7 @@ struct config {
     uint64_t prime_period;
     uint64_t access_period;
     uint64_t probe_period;
+    uint64_t miss_threshold;
     char *shared_filename;
     bool benchmark_mode;        // sender only
     Channel channel;
@@ -132,6 +134,8 @@ void init_default(struct config *config, int argc, char **argv);
 #define CHANNEL_SYNC_TIMEMASK           0x003fffff
 #define CHANNEL_SYNC_JITTER             0x4000
 #define CHANNEL_L3_MISS_THRESHOLD       220
+#define CHANNEL_L2_MISS_THRESHOLD       150 	// not used
+#define CHANNEL_L1_MISS_THRESHOLD       84
 #define MAX_BUFFER_LEN                  1024
 
 // TODO: following parameters need to be verified
