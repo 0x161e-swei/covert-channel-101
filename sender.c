@@ -100,16 +100,16 @@ void (*send_bit)(bool, const struct config*);
 void send_bit_fr(bool one, const struct config *config) {
     uint64_t start_t = rdtsc();
 
-	if (one) {
-		ADDR_PTR addr = config->addr_set->addr;
-		while ((rdtsc() - start_t) < config->interval) {
-			clflush(addr);
-		}
+    if (one) {
+        ADDR_PTR addr = config->addr_set->addr;
+        while ((rdtsc() - start_t) < config->interval) {
+            clflush(addr);
+        }
 
-	} else {
-		start_t = rdtsc();
-		while (rdtsc() - start_t < config->interval) {}
-	}
+    } else {
+        start_t = rdtsc();
+        while (rdtsc() - start_t < config->interval) {}
+    }
 }
 /*
  * Sends a bit to the receiver by repeatedly flushing the addresses of the addr_set
