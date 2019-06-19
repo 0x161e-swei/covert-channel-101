@@ -9,7 +9,7 @@ void init_config(struct config *config, int argc, char **argv) {
 
     init_default(config, argc, argv);
 
-    if (config->channel == PrimeProbe || config->channel == L1DPrimeProbe) {
+    if (config->channel == PrimeProbe) {
         int L1_way_stride = ipow(2, LOG_CACHE_SETS_L1 + LOG_CACHE_LINESIZE); // 4096
         uint64_t bsize = 1024 * CACHE_WAYS_L1 * L1_way_stride; // 64 * 8 * 4k = 2M
 
@@ -33,35 +33,11 @@ void init_config(struct config *config, int argc, char **argv) {
                 addr_set_size++;
             }
             // restrict the probing set to CACHE_WAYS_L1 to aviod self eviction
-            if (config->channel == L1DPrimeProbe && addr_set_size >= CACHE_WAYS_L1) {
+	        if (addr_set_size >= 3 * (CACHE_WAYS_L1 + CACHE_WAYS_L2)) {
                 break;
-            }
-            else if (addr_set_size >= 3 * (CACHE_WAYS_L1 + CACHE_WAYS_L2)) {
-                break;
-            }
+	        }
         }
-
         printf("Found addr_set size of %u\n", addr_set_size);
-    }
-
-    if (config->channel == FlushReload) {
-        int inFile = open(config->shared_filename, O_RDONLY);
-        if (inFile == -1) {
-            fprintf(stderr, "ERROR: Failed to Open File\n");
-            exit(-1);
-        }
-
-        size_t size = 4096;
-        config->buffer = mmap(NULL, size, PROT_READ, MAP_SHARED, inFile, 0);
-        if (config->buffer == (void*) -1 ) {
-            fprintf(stderr, "ERROR: Failed to Map Address\n");
-            exit(-1);
-        }
-
-        ADDR_PTR addr = (ADDR_PTR) config->buffer + config->cache_region * 64;
-        append_string_to_linked_list(&config->addr_set, addr);
-        printf("File mapped at %p and monitoring line %lx\n", config->buffer, addr);
-
     }
 }
 
@@ -189,11 +165,12 @@ int main(int argc, char **argv)
     // Initialize config and local variables
     struct config config;
     init_config(&config, argc, argv);
-    if (config.channel == PrimeProbe || config.channel == L1DPrimeProbe) {
+    if (config.channel == PrimeProbe) {
         detect_bit = detect_bit_pp;
     }
-    else if (config.channel == FlushReload) {
-        detect_bit = detect_bit_fr;
+    else {
+        fprintf(stderr, "This branch only supports LLC-PrimeProbe\n");
+        exit(-1);
     }
 
     char msg_ch[MAX_BUFFER_LEN + 1];

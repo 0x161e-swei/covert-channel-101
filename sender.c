@@ -161,11 +161,12 @@ int main(int argc, char **argv)
     // Initialize config and local variables
     struct config config;
     init_config(&config, argc, argv);
-    if (config.channel == PrimeProbe || config.channel == L1DPrimeProbe) {
+    if (config.channel == PrimeProbe) {
         send_bit = send_bit_pp;
     }
-    else if (config.channel == FlushReload) {
-        send_bit = send_bit_fr;
+    else {
+        fprintf(stderr, "This branch only supports LLC-PrimeProbe\n");
+        exit(-1);
     }
 
     uint64_t start_t, end_t;
