@@ -167,7 +167,26 @@ char *conv_msg(char *data, int size, char *msg) {
 
     return msg;
 }
+ /*
+  * Convert 8 bit data stream into character and return
+  */
+ char *conv_char(char *data, int size, char *msg)
+ {
+     for (int i = 0; i < size; i++) {
+         char tmp[8];
+         int k = 0;
 
+         for (int j = i * 8; j < ((i + 1) * 8); j++) {
+             tmp[k++] = data[j];
+         }
+
+         char tm = strtol(tmp, 0, 2);
+         msg[i] = tm;
+     }
+
+     msg[size] = '\0';
+     return msg;
+ }
 /*
  * Appends the given string to the linked list which is pointed to by the given head
  */
