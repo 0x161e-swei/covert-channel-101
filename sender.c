@@ -41,76 +41,11 @@ void init_config(struct config *config, int argc, char **argv) {
         }
         printf("Found addr_set size of %u\n", addr_set_size);
     }
-
-    if (config->channel == L1DPrimeProbe) {
-        int L1_way_stride = ipow(2, LOG_CACHE_SETS_L1 + LOG_CACHE_LINESIZE); // 4096
-        uint64_t bsize = 1024 * CACHE_WAYS_L1 * L1_way_stride; // 64 * 8 * 4k = 2M
-
-        // Allocate a buffer twice the size of the L1 cache
-        config->buffer = allocate_buffer(bsize);
-
-        printf("buffer pointer addr %p\n", config->buffer);
-        // Initialize the buffer to be be the non-zero page
-        for (uint32_t i = 0; i < bsize; i += 64) {
-            *(config->buffer + i) = pid;
-        }
-        // Construct the addr_set by taking the addresses that have cache set index 0
-        // There will be at least one of such addresses in our buffer.
-        uint32_t addr_set_size = 0;
-        for (int i = 0; i < 1024 * CACHE_WAYS_L1 * CACHE_SETS_L1; i++) {
-            ADDR_PTR addr = (ADDR_PTR) (config->buffer + CACHE_LINESIZE * i);
-            // both of following function should work...L3 is a more restrict set
-            if (get_cache_slice_set_index(addr) == config->cache_region) {
-            // if (get_L3_cache_set_index(addr) == config->cache_region) {
-                append_string_to_linked_list(&config->addr_set, addr);
-                addr_set_size++;
-            }
-            // restrict the probing set to CACHE_WAYS_L1 to aviod self eviction
-            if (addr_set_size >= 2*(CACHE_WAYS_L1 + CACHE_WAYS_L2)) break;
-        }
-
-        printf("Found addr_set size of %u\n", addr_set_size);
-
-    }
-
-    if (config->channel == FlushReload) {
-        int inFile = open(config->shared_filename, O_RDONLY);
-        if (inFile == -1) {
-            fprintf(stderr, "ERROR: Failed to Open File\n");
-            exit(-1);
-        }
-
-        size_t size = 4096;
-        config->buffer = mmap(NULL, size, PROT_READ, MAP_SHARED, inFile, 0);
-        if (config->buffer == (void*) -1 ) {
-            fprintf(stderr, "ERROR: Failed to Map Address\n");
-            exit(-1);
-        }
-
-        ADDR_PTR addr = (ADDR_PTR) config->buffer + config->cache_region * 64;
-        append_string_to_linked_list(&config->addr_set, addr);
-        printf("File mapped at %p and monitoring line %lx\n", config->buffer, addr);
-    }
-
 }
 
 // sender function pointer
 void (*send_bit)(bool, const struct config*);
 
-void send_bit_fr(bool one, const struct config *config) {
-    uint64_t start_t = rdtsc();
-
-    if (one) {
-        ADDR_PTR addr = config->addr_set->addr;
-        while ((rdtsc() - start_t) < config->interval) {
-            clflush(addr);
-        }
-
-    } else {
-        start_t = rdtsc();
-        while (rdtsc() - start_t < config->interval) {}
-    }
-}
 /*
  * Sends a bit to the receiver by repeatedly flushing the addresses of the addr_set
  * for the clock length of config->interval when we are sending a one, or by doing nothing

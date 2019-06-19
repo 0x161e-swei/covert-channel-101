@@ -44,44 +44,6 @@ void init_config(struct config *config, int argc, char **argv) {
 // receiver function pointer
 bool (*detect_bit)(const struct config*, bool);
 
-bool detect_bit_fr(const struct config *config, bool first_time) {
-    int misses = 0;
-    int hits = 0;
-    int total_measurements = 0;
-
-    // This is high because the misses caused by clflush
-    // usually cause an access time larger than 150 cycles
-
-    uint64_t start_t = rdtsc();
-    while ((rdtsc() - start_t) < config->interval) {
-        uint64_t time = measure_one_block_access_time(config->addr_set->addr);
-
-        // When the access time is larger than 1000 cycles,
-        // it is usually due to a disk miss. We exclude such misses
-        // because they are not caused by clflush.
-        if (time < 1000) {
-            total_measurements++;
-            if (time > config->miss_threshold) {
-                misses++;
-            } else {
-                hits++;
-            }
-        }
-
-        // Busy loop to give time to the sender to flush the cache
-        uint64_t wait_t = rdtsc();
-        while((rdtsc() - wait_t) < config->access_period &&
-                   (rdtsc() - start_t) < config->interval);
-    }
-
-    if (misses != 0) {
-        debug("Misses: %d out of %d\n", misses, total_measurements);
-    }
-
-    bool ret =  misses > (float) total_measurements / 2.0;
-    return ret;
-
-}
 /*
  * Detects a bit by repeatedly measuring the access time of the addresses in the
  * probing set and counting the number of misses for the clock length of config->interval.
