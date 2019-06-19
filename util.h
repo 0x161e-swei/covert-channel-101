@@ -87,7 +87,10 @@ int ipow(int base, int exp);
 char *string_to_binary(char *s);
 
 char *conv_msg(char *data, int size, char *msg);
-
+ /*
+  * Convert 8 bit data stream into character and return
+  */
+char *conv_char(char *data, int size, char *msg);
 
 uint64_t get_cache_slice_set_index(ADDR_PTR virt_addr);
 uint64_t get_L3_cache_set_index(ADDR_PTR virt_addr);
