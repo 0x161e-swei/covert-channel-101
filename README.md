@@ -4,6 +4,12 @@ This branch currently works on
 - an aws m4.xlarge dedicated instance
 - a local Haswell (4c/8t) desktop
 
+To compile the code run
+`make clean; make`
+
+To run the code, first setup pre-allocated huge pages
+and (recommended) disable hyper-threading) by running:
+`./setup.sh`
 
 
 
