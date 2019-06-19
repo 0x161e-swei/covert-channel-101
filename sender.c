@@ -11,7 +11,7 @@ void init_config(struct config *config, int argc, char **argv) {
 
     if (config->channel == PrimeProbe) {
         int L3_way_stride = ipow(2, LOG_CACHE_SETS_L3 + LOG_CACHE_LINESIZE);
-        uint64_t bsize = 32 * CACHE_WAYS_L3 * L3_way_stride;
+        uint64_t bsize = 8 * CACHE_WAYS_L3 * L3_way_stride;
 
         // Allocate a buffer of the size of the LLC
         // config->buffer = malloc((size_t) bsize);
@@ -26,9 +26,9 @@ void init_config(struct config *config, int argc, char **argv) {
         // Construct the addr_set by taking the addresses that have cache set index 0
         uint32_t addr_set_size = 0;
         for (int set_index = 0; set_index < CACHE_SETS_L3; set_index++) {
-            for (uint32_t line_index = 0; line_index < 32 * CACHE_WAYS_L3; line_index++) {
+            for (uint32_t line_index = 0; line_index < 8 * CACHE_WAYS_L3; line_index++) {
                 // a simple hash to shuffle the lines in physical address space
-                uint32_t stride_idx = (line_index * 167 + 13) % (32 * CACHE_WAYS_L3);
+                uint32_t stride_idx = (line_index * 167 + 13) % (8 * CACHE_WAYS_L3);
                 ADDR_PTR addr = (ADDR_PTR) (config->buffer + \
                         set_index * CACHE_LINESIZE + stride_idx * L3_way_stride);
                 // both of following function should work...L3 is a more restrict set
@@ -44,7 +44,7 @@ void init_config(struct config *config, int argc, char **argv) {
 
     if (config->channel == L1DPrimeProbe) {
         int L1_way_stride = ipow(2, LOG_CACHE_SETS_L1 + LOG_CACHE_LINESIZE); // 4096
-        uint64_t bsize = 1024 * CACHE_WAYS_L1 * L1_way_stride; // 64 * 8 * 4k = 2M
+        uint64_t bsize = 256 * CACHE_WAYS_L1 * L1_way_stride; // 64 * 8 * 4k = 2M
 
         // Allocate a buffer twice the size of the L1 cache
         config->buffer = allocate_buffer(bsize);
@@ -57,7 +57,7 @@ void init_config(struct config *config, int argc, char **argv) {
         // Construct the addr_set by taking the addresses that have cache set index 0
         // There will be at least one of such addresses in our buffer.
         uint32_t addr_set_size = 0;
-        for (int i = 0; i < 1024 * CACHE_WAYS_L1 * CACHE_SETS_L1; i++) {
+        for (int i = 0; i < 256 * CACHE_WAYS_L1 * CACHE_SETS_L1; i++) {
             ADDR_PTR addr = (ADDR_PTR) (config->buffer + CACHE_LINESIZE * i);
             // both of following function should work...L3 is a more restrict set
             if (get_cache_slice_set_index(addr) == config->cache_region) {
@@ -66,7 +66,7 @@ void init_config(struct config *config, int argc, char **argv) {
                 addr_set_size++;
             }
             // restrict the probing set to CACHE_WAYS_L1 to aviod self eviction
-            if (addr_set_size >= 2*(CACHE_WAYS_L1 + CACHE_WAYS_L2)) break;
+            if (addr_set_size >= 2 * (CACHE_WAYS_L1 + CACHE_WAYS_L2)) break;
         }
 
         printf("Found addr_set size of %u\n", addr_set_size);

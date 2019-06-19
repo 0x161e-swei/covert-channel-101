@@ -10,8 +10,10 @@ void init_config(struct config *config, int argc, char **argv) {
     init_default(config, argc, argv);
 
     if (config->channel == PrimeProbe || config->channel == L1DPrimeProbe) {
-        int L1_way_stride = ipow(2, LOG_CACHE_SETS_L1 + LOG_CACHE_LINESIZE); // 4096
-        uint64_t bsize = 1024 * CACHE_WAYS_L1 * L1_way_stride; // 64 * 8 * 4k = 2M
+        // 4096 L1 stride
+        int L1_way_stride = ipow(2, LOG_CACHE_SETS_L1 + LOG_CACHE_LINESIZE);
+        // (4 * 64) * 8 * 4k = 8M
+        uint64_t bsize = 256 * CACHE_WAYS_L1 * L1_way_stride;
 
         // Allocate a buffer twice the size of the L1 cache
         config->buffer = allocate_buffer(bsize);
@@ -24,7 +26,7 @@ void init_config(struct config *config, int argc, char **argv) {
         // Construct the addr_set by taking the addresses that have cache set index 0
         // There will be at least one of such addresses in our buffer.
         uint32_t addr_set_size = 0;
-        for (int i = 0; i < 1024 * CACHE_WAYS_L1 * CACHE_SETS_L1; i++) {
+        for (int i = 0; i < 256 * CACHE_WAYS_L1 * CACHE_SETS_L1; i++) {
             ADDR_PTR addr = (ADDR_PTR) (config->buffer + CACHE_LINESIZE * i);
             // both of following function should work...L3 is a more restrict set
             if (get_cache_slice_set_index(addr) == config->cache_region) {
@@ -36,6 +38,8 @@ void init_config(struct config *config, int argc, char **argv) {
             if (config->channel == L1DPrimeProbe && addr_set_size >= CACHE_WAYS_L1) {
                 break;
             }
+            // more lines than private cache ways helps to put more lines
+            // into llc slices, increasing chance of to conflict with sender
             else if (addr_set_size >= 3 * (CACHE_WAYS_L1 + CACHE_WAYS_L2)) {
                 break;
             }
