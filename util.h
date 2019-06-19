@@ -7,10 +7,14 @@
 #include <string.h>
 #include <inttypes.h>
 #include <time.h>
-#include <unistd.h>
+#include <sys/types.h>
+#include <sys/stat.h>
 #include <sys/mman.h>
-
 #include <fcntl.h>
+#include <unistd.h>
+#include <errno.h>
+#include <string.h>
+
 
 #ifndef UTIL_H_
 #define UTIL_H_
@@ -31,6 +35,12 @@
 
 #define ADDR_PTR uint64_t
 #define CYCLES uint32_t
+
+struct state {
+	ADDR_PTR addr;
+	int interval;
+	int wait_cycles_between_measurements;
+};
 
 typedef enum _channel {
     PrimeProbe = 0,
@@ -64,36 +74,29 @@ struct config {
 uint64_t measure_one_block_access_time(ADDR_PTR addr);
 void clflush(ADDR_PTR addr);
 uint64_t rdtsc();
+CYCLES rdtscp(void);
+
 uint64_t get_time();
 uint64_t cc_sync();
 
-uint64_t printPID();
+uint64_t print_pid();
 void print_help();
+
 int ipow(int base, int exp);
 
 char *string_to_binary(char *s);
-char *conv_char(char *data, int size, char *msg);
+
 char *conv_msg(char *data, int size, char *msg);
 
-uint64_t get_cache_set_index(ADDR_PTR phys_addr);
-uint64_t get_hugepage_cache_set_index(ADDR_PTR virt_addr);
+
 uint64_t get_cache_slice_set_index(ADDR_PTR virt_addr);
 uint64_t get_L3_cache_set_index(ADDR_PTR virt_addr);
+// uint64_t get_hugepage_cache_set_index(ADDR_PTR virt_addr);
 void *allocate_buffer(uint64_t size);
 
 void append_string_to_linked_list(struct Node **head, ADDR_PTR addr);
 
 void init_default(struct config *config, int argc, char **argv);
-
-// L1 properties
-// static const int CACHE_SETS_L1 = 64;
-// static const int CACHE_WAYS_L1 = 8;
-//
-// L3 properties
-// static const int CACHE_SETS_L3 = 8192;
-// static const int CACHE_WAYS_L3 = 16;
-// static const int CACHE_SLICES_L3 = 8;
-
 
 
 // =======================================

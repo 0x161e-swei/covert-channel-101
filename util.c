@@ -40,6 +40,15 @@ uint64_t rdtsc() {
     return (d << 32) | a;
 }
 
+extern inline __attribute__((always_inline))
+CYCLES rdtscp(void) {
+	CYCLES cycles;
+	asm volatile ("rdtscp"
+	: /* outputs */ "=a" (cycles));
+
+	return cycles;
+}
+
 inline uint64_t get_time() {
     // can be a choice of channel?
     return rdtsc();
@@ -68,36 +77,26 @@ int ipow(int base, int exp)
 }
 
 /*
- * Returns the 6 bits used index L1 cache sets of a given address.
+ * Returns the 11 bits used index a LLC set in a slice of a given address.
  */
-uint64_t get_cache_slice_set_index(ADDR_PTR virt_addr)
-{
+uint64_t get_cache_slice_set_index(ADDR_PTR virt_addr) {
     // return (virt_addr >> LOG_CACHE_LINESIZE) & CACHE_SETS_L1_MASK;
     return (virt_addr >> LOG_CACHE_LINESIZE) & (2048-1);
 }
 
-uint64_t get_L3_cache_set_index(ADDR_PTR virt_addr)
-{
+uint64_t get_L3_cache_set_index(ADDR_PTR virt_addr) {
     return (virt_addr >> LOG_CACHE_LINESIZE) & CACHE_SETS_L3_MASK;
     // return (virt_addr >> LOG_CACHE_LINESIZE) & (2048-1);
 }
 
 /*
- * Returns the 15 bits used cache index of a given virtual address,
+ * Returns the 15 physical bits of a given virtual address in a hugepage.
  */
-uint64_t get_hugepage_cache_set_index(ADDR_PTR virt_addr)
-{
-    return (virt_addr & HUGEPAGE_MASK) >> LOG_CACHE_LINESIZE;
-}
+// uint64_t get_hugepage_cache_set_index(ADDR_PTR virt_addr)
+// {
+//     return (virt_addr & HUGEPAGE_MASK) >> LOG_CACHE_LINESIZE;
+// }
 
-/*
- * Returns the 10 bits cache set index of a given address.
- */
-uint64_t get_cache_set_index(ADDR_PTR phys_addr)
-{
-    uint64_t mask = ((uint64_t) 1 << 16) - 1;
-    return (phys_addr & mask) >> LOG_CACHE_LINESIZE;
-}
 
 /*
  * Allocate a buffer of the size as passed-in
@@ -153,24 +152,6 @@ char *string_to_binary(char *s)
 /*
  * Convert 8 bit data stream into character and return
  */
-char *conv_char(char *data, int size, char *msg)
-{
-    for (int i = 0; i < size; i++) {
-        char tmp[8];
-        int k = 0;
-
-        for (int j = i * 8; j < ((i + 1) * 8); j++) {
-            tmp[k++] = data[j];
-        }
-
-        char tm = strtol(tmp, 0, 2);
-        msg[i] = tm;
-    }
-
-    msg[size] = '\0';
-    return msg;
-}
-
 char *conv_msg(char *data, int size, char *msg) {
     for (int i = 0; i < size; i++) {
         char _tmp = 0;
@@ -212,7 +193,7 @@ void append_string_to_linked_list(struct Node **head, ADDR_PTR addr)
     }
 }
 
-uint64_t printPID() {
+uint64_t print_pid() {
     uint64_t pid = getpid();
     printf("Process ID: %lu\n", pid);
     return pid;
@@ -287,7 +268,7 @@ void init_default(struct config *config, int argc, char **argv) {
     }
 
     // debug("prime %u access %u probe %u\n", config->prime_period, config->access_period, config->probe_period);
-    //
+
     if (config->channel == FlushReload) {
         config->access_period = CHANNEL_FR_DEFAULT_INTERVAL;
         config->access_period = CHANNEL_FR_DEFAULT_PERIOD;

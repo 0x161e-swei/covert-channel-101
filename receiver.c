@@ -4,9 +4,8 @@
  * Parses the arguments and flags of the program and initializes the struct config
  * with those parameters (or the default ones if no custom flags are given).
  */
-void init_config(struct config *config, int argc, char **argv)
-{
-    uint64_t pid = printPID();
+void init_config(struct config *config, int argc, char **argv) {
+    uint64_t pid = print_pid();
 
     init_default(config, argc, argv);
 
