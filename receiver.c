@@ -10,8 +10,10 @@ void init_config(struct config *config, int argc, char **argv) {
     init_default(config, argc, argv);
 
     if (config->channel == PrimeProbe) {
-        int L1_way_stride = ipow(2, LOG_CACHE_SETS_L1 + LOG_CACHE_LINESIZE); // 4096
-        uint64_t bsize = 1024 * CACHE_WAYS_L1 * L1_way_stride; // 64 * 8 * 4k = 2M
+        // 4096 L1 stride
+        int L1_way_stride = ipow(2, LOG_CACHE_SETS_L1 + LOG_CACHE_LINESIZE);
+        // (4 * 64) * 8 * 4k = 8M
+        uint64_t bsize = 512 * CACHE_WAYS_L1 * L1_way_stride;
 
         // Allocate a buffer twice the size of the L1 cache
         config->buffer = allocate_buffer(bsize);
@@ -24,7 +26,7 @@ void init_config(struct config *config, int argc, char **argv) {
         // Construct the addr_set by taking the addresses that have cache set index 0
         // There will be at least one of such addresses in our buffer.
         uint32_t addr_set_size = 0;
-        for (int i = 0; i < 1024 * CACHE_WAYS_L1 * CACHE_SETS_L1; i++) {
+        for (int i = 0; i < 512 * CACHE_WAYS_L1 * CACHE_SETS_L1; i++) {
             ADDR_PTR addr = (ADDR_PTR) (config->buffer + CACHE_LINESIZE * i);
             // both of following function should work...L3 is a more restrict set
             if (get_cache_slice_set_index(addr) == config->cache_region) {
@@ -33,7 +35,7 @@ void init_config(struct config *config, int argc, char **argv) {
                 addr_set_size++;
             }
             // restrict the probing set to CACHE_WAYS_L1 to aviod self eviction
-	        if (addr_set_size >= 3 * (CACHE_WAYS_L1 + CACHE_WAYS_L2)) {
+	        if (addr_set_size >= 5 * (CACHE_WAYS_L1 + CACHE_WAYS_L2)) {
                 break;
 	        }
         }
@@ -122,10 +124,58 @@ bool detect_bit_pp(const struct config *config, bool first_bit)
 // to be the same as the max size of the message in the starter code of the sender.
 // static const int MAX_BUFFER_LEN = 128 * 8;
 
+void benchmark_receive(struct config *config_p) {
+    uint32_t benchmarkSize = 8192;
+    uint8_t *msg = (uint8_t *)malloc(sizeof(uint8_t) * benchmarkSize);
+    uint64_t start_t, bench_start_t = 0, bench_end_t = 0;
+    for (uint32_t i = 0; i < benchmarkSize; i++) {
+        // sync every 1024 bits, detecting pilot signal again
+        if ((i & 0x3ff) == 0) {
+            bool curr = true, prev = true;
+            int flip_sequence = 4;
+            while (true) {
+                start_t = cc_sync();
+                curr = detect_bit(config_p, true);
+
+                if (flip_sequence == 0 && curr == 1 && prev == 1) {
+                    debug("pilot signal detected for round %u\r", i / 1024);
+                    start_t = cc_sync();
+                    bench_start_t = i == 0? start_t: bench_start_t;
+                    break;
+                }
+                else if (flip_sequence > 0 && curr != prev) {
+                    flip_sequence--;
+                }
+        else if (curr == prev) {
+                    flip_sequence = 4;
+                }
+                prev = curr;
+            }
+        }
+
+        msg[i] = detect_bit(config_p, true);
+
+    }
+    bench_end_t = get_time();
+    printf("total cycles to receive %u bits is %lu\n", benchmarkSize,
+        bench_end_t - bench_start_t);
+
+    if (msg) {
+        FILE *receiverSave = fopen("receiverSave", "w+");
+        for (uint32_t i = 0; i < benchmarkSize; i++) {
+            fprintf(receiverSave, "%u %u\n", i, msg[i]);
+        }
+        fclose(receiverSave);
+
+        free(msg);
+    }
+}
+
 int main(int argc, char **argv)
 {
     // Initialize config and local variables
     struct config config;
+
     init_config(&config, argc, argv);
     if (config.channel == PrimeProbe) {
         detect_bit = detect_bit_pp;
@@ -140,6 +190,11 @@ int main(int argc, char **argv)
     bool first_time = true;
     bool current;
     bool previous = true;
+
+    if (config.benchmark_mode) {
+        benchmark_receive(&config);
+        exit(0);
+    }
 
     printf("Press enter to begin listening ");
     getchar();
