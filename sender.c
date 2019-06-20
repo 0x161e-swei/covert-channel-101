@@ -156,6 +156,53 @@ void send_bit_pp(bool one, const struct config *config)
     }
 }
 
+uint8_t *generate_random_msg(uint32_t size) {
+    uint8_t *msg = (uint8_t *)malloc(sizeof(uint8_t) * size);
+    srand(time(NULL));
+    for(uint32_t i = 0; i < size; i++) {
+        int randomnum = rand();
+        msg[i] = (randomnum > RAND_MAX/2);
+    }
+    return msg;
+}
+
+void benchmark_send(struct config *config_p) {
+    uint32_t benchmarkSize = 8192;
+    uint8_t *randomMsg = generate_random_msg(benchmarkSize);
+    uint64_t start_t;
+
+    for (uint32_t i = 0; i < benchmarkSize; i++) {
+        // sync every 1024 bits
+        if ((i & 0x3ff) == 0) {
+            for (int j = 0; j < 10; j++) {
+                start_t = cc_sync();
+                send_bit(j % 2 == 0, config_p);
+            }
+
+            start_t = cc_sync();
+            send_bit(true, config_p);
+
+            start_t = cc_sync();
+            send_bit(true, config_p);
+
+            // Send the message bit by bit
+            debug("pilot signal sentt for round %u\r", i / 1024);
+            start_t = cc_sync();
+        }
+        send_bit(randomMsg[i], config_p);
+    }
+
+    if (randomMsg) {
+        FILE *senderSave = fopen("senderSave", "w+");
+        for (uint32_t i = 0; i < benchmarkSize; i++) {
+            fprintf(senderSave, "%u %u\n", i, randomMsg[i]);
+        }
+        fclose(senderSave);
+
+        free(randomMsg);
+    }
+}
+
 int main(int argc, char **argv)
 {
     // Initialize config and local variables
@@ -168,17 +215,28 @@ int main(int argc, char **argv)
         send_bit = send_bit_fr;
     }
 
+    if (config.benchmark_mode) {
+        benchmark_send(&config);
+        exit(0);
+    }
+
     uint64_t start_t, end_t;
     int sending = 1;
     printf("Please type a message (exit to stop).\n");
+
+#if 0
     char all_one_msg[129];
     for (uint32_t i = 0; i < 120; i++)
         all_one_msg[i] = '1';
     for (uint32_t i = 120; i < 128; i++)
         all_one_msg[i] = '1';
     all_one_msg[128] = '\0';
+#endif
+
     while (sending) {
-#if 1
+#if 0
+        char *msg = all_one_msg;
+#else
         // Get a message to send from the user
         printf("< ");
         char text_buf[128];
@@ -189,8 +247,6 @@ int main(int argc, char **argv)
         }
 
         char *msg = string_to_binary(text_buf);
-#else
-        char *msg = all_one_msg;
 #endif
 
         // If we are in benchmark mode, start measuring the time

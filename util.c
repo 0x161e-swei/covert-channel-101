@@ -42,11 +42,11 @@ uint64_t rdtsc() {
 
 extern inline __attribute__((always_inline))
 CYCLES rdtscp(void) {
-	CYCLES cycles;
-	asm volatile ("rdtscp"
-	: /* outputs */ "=a" (cycles));
+    CYCLES cycles;
+    asm volatile ("rdtscp"
+    : /* outputs */ "=a" (cycles));
 
-	return cycles;
+    return cycles;
 }
 
 inline uint64_t get_time() {
@@ -109,7 +109,7 @@ void *allocate_buffer(uint64_t size) {
 #endif
 
     if (buffer == MAP_FAILED) {
-        fprintf(stderr, "allocating non-hugepages\n");
+        fprintf(stderr, "WARNING: allocating non-hugepages\n");
         buffer = mmap(NULL, size, PROT_READ|PROT_WRITE, MAP_ANON|MAP_PRIVATE, -1, 0);
     }
     if (buffer == MAP_FAILED) {
@@ -200,7 +200,15 @@ uint64_t print_pid() {
 }
 
 void print_help() {
-    // TODO
+    printf("======================= H E L P ===============================\n");
+    printf("-c: (uint 0 to 2) to select a channel\n");
+    printf("-i: (uint) to specify a interval for each bit transmission\n");
+    printf("-p: (uint) to specify a time period for prime (for llc-pp)\n");
+    printf("-a: (uint) to specify a time period for access (for llc-pp)\n");
+    printf("-r: (uint) to specify a LLC cache set to contend on\n");
+    printf("-b: to start benchmark mode (default is chat mode)\n");
+    printf("-h: to print this message\n");
+    printf("===============================================================\n");
 }
 
 void init_default(struct config *config, int argc, char **argv) {
@@ -224,30 +232,31 @@ void init_default(struct config *config, int argc, char **argv) {
 
     config->channel = PrimeProbe;
 
-    // Parse the command line flags
-    //      -d is used to enable the debug prints
-    //      -i is used to specify a custom value for the time interval
-    //      -w is used to specify a custom number of wait time between two probes
     int option;
-    while ((option = getopt(argc, argv, "di:a:r:c:")) != -1) {
+    while ((option = getopt(argc, argv, "c:i:p:a:r:bh")) != -1) {
         switch (option) {
-            case 'i':
-                config->interval = atoi(optarg);
-                break;
-            case 'r':
-                config->cache_region = atoi(optarg);
-                break;
-            case 'a':
-                config->access_period = atoi(optarg);
-                break;
             case 'c':
                 // value 0,1,2 to select channel
                 config->channel = atoi(optarg);
                 break;
+            case 'i':
+                config->interval = atoi(optarg);
+                break;
+            case 'p':
+                config->prime_period = atoi(optarg);
+                break;
+            case 'a':
+                config->access_period = atoi(optarg);
+                break;
+            case 'r':
+                config->cache_region = atoi(optarg);
+                break;
+            case 'b':
+                config->benchmark_mode = true;
+                break;
             case '?':
                 fprintf(stderr, "Unknown option character `\\x%x'.\n", optopt);
-                print_help();
-                exit(1);
+            case 'h':
             default:
                 print_help();
                 exit(1);
