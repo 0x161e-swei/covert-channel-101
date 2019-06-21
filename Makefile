@@ -6,6 +6,8 @@ TARGETS=sender receiver sender_debug receiver_debug
 UTILS=util.o
 
 all: $(TARGETS) $(DEBUGTARGETS)
+	cp sender pp-llc-send
+	cp receiver pp-llc-recv
 
 %.o: %.c
 	$(CC) $(CFLAGS) -c $<

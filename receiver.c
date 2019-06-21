@@ -2,7 +2,7 @@
 
 /*
  * Parses the arguments and flags of the program and initializes the struct config
- * with those parameters (or the default ones if no custom flags are given).
+* with those parameters (or the default ones if no custom flags are given).
  */
 void init_config(struct config *config, int argc, char **argv) {
     uint64_t pid = print_pid();
@@ -70,9 +70,9 @@ void init_config(struct config *config, int argc, char **argv) {
 }
 
 // receiver function pointer
-bool (*detect_bit)(const struct config*, bool);
+bool (*detect_bit)(const struct config*);
 
-bool detect_bit_fr(const struct config *config, bool first_time) {
+bool detect_bit_fr(const struct config *config) {
     int misses = 0;
     int hits = 0;
     int total_measurements = 0;
@@ -117,8 +117,8 @@ bool detect_bit_fr(const struct config *config, bool first_time) {
  * If the the first_bit argument is true, relax the strict definition of "one" and try to
  * cc_sync with the sender.
  */
-// bool detect_bit(const struct config *config, bool first_bit, uint64_t start_t)
-bool detect_bit_pp(const struct config *config, bool first_bit)
+// bool detect_bit(const struct config *config, uint64_t start_t)
+bool detect_bit_pp(const struct config *config)
 {
     uint64_t start_t = get_time();
     // debug("time %lx\n", start_t);
@@ -189,9 +189,17 @@ bool detect_bit_pp(const struct config *config, bool first_bit)
 // static const int MAX_BUFFER_LEN = 128 * 8;
 
 void benchmark_receive(struct config *config_p) {
+    FILE *receiverSave = fopen("data/receiverSave", "w+");
+    if (receiverSave == NULL) {
+        fprintf(stderr, "ERROR: cannot open file to save.\n"
+                "Check if data/ folder is created\n");
+        exit(-1);
+    }
+
     uint32_t benchmarkSize = 8192;
     uint8_t *msg = (uint8_t *)malloc(sizeof(uint8_t) * benchmarkSize);
-    uint64_t start_t, bench_start_t = 0, bench_end_t = 0;
+    uint64_t start_t;
+    struct timespec beg_t, end_t;
     for (uint32_t i = 0; i < benchmarkSize; i++) {
         // sync every 1024 bits, detecting pilot signal again
         if ((i & 0x3ff) == 0) {
@@ -199,33 +207,34 @@ void benchmark_receive(struct config *config_p) {
             int flip_sequence = 4;
             while (true) {
                 start_t = cc_sync();
-                curr = detect_bit(config_p, true);
+                curr = detect_bit(config_p);
 
                 if (flip_sequence == 0 && curr == 1 && prev == 1) {
                     debug("pilot signal detected for round %u\r", i / 1024);
                     start_t = cc_sync();
-                    bench_start_t = i == 0? start_t: bench_start_t;
+                    if (i == 0) clock_gettime(CLOCK_MONOTONIC, &beg_t);
                     break;
                 }
                 else if (flip_sequence > 0 && curr != prev) {
                     flip_sequence--;
                 }
-        else if (curr == prev) {
+                else if (curr == prev) {
                     flip_sequence = 4;
                 }
                 prev = curr;
             }
         }
 
-        msg[i] = detect_bit(config_p, true);
+        msg[i] = detect_bit(config_p);
 
     }
-    bench_end_t = get_time();
+
+    clock_gettime(CLOCK_MONOTONIC, &end_t);
     printf("total cycles to receive %u bits is %lu\n", benchmarkSize,
-        bench_end_t - bench_start_t);
+    (end_t.tv_sec - beg_t.tv_sec) * (long)1e9 + (end_t.tv_nsec -
+    beg_t.tv_nsec));
 
     if (msg) {
-        FILE *receiverSave = fopen("receiverSave", "w+");
         for (uint32_t i = 0; i < benchmarkSize; i++) {
             fprintf(receiverSave, "%u %u\n", i, msg[i]);
         }
@@ -250,7 +259,6 @@ int main(int argc, char **argv)
 
     char msg_ch[MAX_BUFFER_LEN + 1];
     int flip_sequence = 4;
-    bool first_time = true;
     bool current;
     bool previous = true;
 
@@ -265,8 +273,8 @@ int main(int argc, char **argv)
 
         // cc_sync on clock edge
         uint64_t start_t = cc_sync();
-        // current = detect_bit(&config, first_time, start_t);
-        current = detect_bit(&config, first_time);
+        // current = detect_bit(&config, start_t);
+        current = detect_bit(&config);
 
         // This receiving loop is a sort of finite config machine.
         // Once again, it would be easier to explain how it works
@@ -298,8 +306,8 @@ int main(int argc, char **argv)
             start_t = cc_sync();
             for (msg_len = 0; msg_len < MAX_BUFFER_LEN; msg_len++) {
 #if 1
-                // uint32_t bit = detect_bit(&config, first_time, start_t);
-                uint32_t bit = detect_bit(&config, first_time);
+                // uint32_t bit = detect_bit(&config, start_t);
+                uint32_t bit = detect_bit(&config);
                 msg_ch[msg_len] = '0' + bit;
                 strike_zeros = (strike_zeros + (1-bit)) & (bit-1);
                 if (strike_zeros >= 8 && ((msg_len & 0x7) == 0)) {
@@ -308,7 +316,7 @@ int main(int argc, char **argv)
                 }
 
 #else
-                if (detect_bit(&config, first_time)) {
+                if (detect_bit(&config)) {
                     msg_ch[msg_len] = '1';
                     strike_zeros = 0;
                 } else {
@@ -334,11 +342,9 @@ int main(int argc, char **argv)
 
         } else if (flip_sequence > 0 && current != previous) {
             flip_sequence--;
-            first_time = false;
 
         } else if (current == previous) {
             flip_sequence = 4;
-            first_time = true;
         }
 
         previous = current;

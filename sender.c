@@ -167,6 +167,13 @@ uint8_t *generate_random_msg(uint32_t size) {
 }
 
 void benchmark_send(struct config *config_p) {
+    FILE *senderSave = fopen("data/senderSave", "w+");
+    if (!senderSave) {
+        fprintf(stderr, "ERROR: cannot open file to save.\n"
+                "Check if data/ folder is created\n");
+        exit(-1);
+    }
+
     uint32_t benchmarkSize = 8192;
     uint8_t *randomMsg = generate_random_msg(benchmarkSize);
     uint64_t start_t;
@@ -193,7 +200,6 @@ void benchmark_send(struct config *config_p) {
     }
 
     if (randomMsg) {
-        FILE *senderSave = fopen("senderSave", "w+");
         for (uint32_t i = 0; i < benchmarkSize; i++) {
             fprintf(senderSave, "%u %u\n", i, randomMsg[i]);
         }
