@@ -1,3 +1,10 @@
+**Note: This branch is _redacted_ from master to help construct the ISCA19
+ARCH-SEC Tutorial. Please see details at [the tutorial
+website](https://sites.google.com/view/arch-sec/home) and [code
+repo](https://github.com/yshalabi/covert-channel-tutorial).**
+
+
+
 # Implementation of a LLC Prime+Probe and a Flush+Reload covert-channels
 
 This is one possible Implementation of LLC Prime+Probe and Flush+Reload
