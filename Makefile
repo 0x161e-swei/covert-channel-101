@@ -22,4 +22,4 @@ $(TARGETS): %:%.o util.o
 .PHONY:	clean
 
 clean:
-	rm -f *.o $(HELPERS) $(TARGETS)
+	rm -f *.o $(HELPERS) $(TARGETS) pp-llc-send pp-llc-recv
