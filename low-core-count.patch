@@ -1,0 +1,13 @@
+diff --git a/receiver.c b/receiver.c
+index b6c55f1..a09aec6 100644
+--- a/receiver.c
++++ b/receiver.c
+@@ -35,7 +35,7 @@ void init_config(struct config *config, int argc, char **argv) {
+                 addr_set_size++;
+             }
+             // restrict the probing set to CACHE_WAYS_L1 to aviod self eviction
+-	        if (addr_set_size >= 5 * (CACHE_WAYS_L1 + CACHE_WAYS_L2)) {
++	        if (addr_set_size >= 3 * (CACHE_WAYS_L1 + CACHE_WAYS_L2)) {
+                 break;
+ 	        }
+         }
