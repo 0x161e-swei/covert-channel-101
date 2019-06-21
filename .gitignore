@@ -5,6 +5,8 @@ sender
 receiver
 sender_debug
 receiver_debug
+pp-llc-send
+pp-llc-recv
 
 # Created by https://www.gitignore.io/api/c,emacs
 
