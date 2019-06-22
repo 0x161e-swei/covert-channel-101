@@ -6,14 +6,15 @@ import shutil
 import os
 import numpy
 import json
+import argparse
 
 class channel_benchmark():
     def __init__(self, tests, runsPerTest=10, timeBetweenRuns=1,
-                 senderCore=0, readerCore=2,
+                 senderCore=0, readerCore=2, cacheRegion=0,
                  channelArgs=["interval", "primeTime", "accessTime"]):
 
         self.sender = ['taskset', '-c', str(senderCore),
-                       sender_bin, "-b"]
+                       sender_bin, "-b", "-r", str(cacheRegion)]
         self.resultFile = os.path.join(result_dir, "llc-pp.json")
         try:
             os.mkdir(result_dir)
@@ -21,7 +22,7 @@ class channel_benchmark():
             pass
 
         self.reader = ['taskset', '-c', str(readerCore),
-                       reader_bin, "-b"]
+                       reader_bin, "-b", "-r", str(cacheRegion)]
 
         self.cool_down = timeBetweenRuns
         self.channelArgs = channelArgs
@@ -142,7 +143,7 @@ class channel_benchmark():
             sleep(self.cool_down)
             # reader.wait() # needs work
             # in case reader did not get all rounds of testing from sender
-            if reader.poll is None:
+            if reader.poll() is None:
                 reader.kill()
                 print("Reader faild to get all benchmarking messages\n");
                 return 0
@@ -174,6 +175,17 @@ class channel_benchmark():
             self.doTest(test)
 
 if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description='Benchmarking the LLC Prime+Probe Covert-Channel.\nPlease modify data variable to specify your tests configs!')
+    parser.add_argument('--sendercore', '-s', type=int, default=0,
+                        help="specify the core to pin sender on (default 0).")
+    parser.add_argument('--readercore', '-r', type=int, default=2,
+                        help="specify the core to pin reader on (default 2).")
+    parser.add_argument('--cacheset', '-c', type=int, default=0,
+                        help="specify the cache set to contend on (default 0).")
+    parser.add_argument('--tests', '-t', type=int, default=1,
+                        help="specify the number of runs per test (default 1).")
+    args = parser.parse_args()
+
     data = map(
         lambda s: {"interval":s[0], "primeTime":s[1], "accessTime":s[2]},
         [# interval, primeTime, accessTime
@@ -199,8 +211,9 @@ if __name__ == '__main__':
         env["LD_LIBRARY_PATH"] = base_dir
 
     channel = channel_benchmark(data
-                                ,runsPerTest=1
-                                ,readerCore=0
-                                ,senderCore=2)
+                                ,runsPerTest=args.tests
+                                ,readerCore=args.sendercore
+                                ,senderCore=args.readercore
+                                ,cacheRegion=args.cacheset)
     channel.benchmark();
 
